@@ -1,0 +1,97 @@
+{
+  "name": "vibe-session-manager",
+  "productName": "Vibe Session Manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One overview of all local Claude Code and Codex sessions on Windows: which are waiting for you, what each is about, and a jump to the right editor window.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "ai-agents",
+    "session-manager",
+    "electron",
+    "tray",
+    "windows",
+    "vibe-coding"
+  ],
+  "homepage": "https://github.com/Ruvan72/vibe-session-manager#readme",
+  "bugs": {
+    "url": "https://github.com/Ruvan72/vibe-session-manager/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ruvan72/vibe-session-manager.git"
+  },
+  "license": "MIT",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "node scripts/electron-vite.cjs dev",
+    "build": "electron-vite build",
+    "start": "node scripts/electron-vite.cjs preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "demo-data": "node --experimental-strip-types --no-warnings scripts/demo-data.ts",
+    "scan": "node --experimental-strip-types --no-warnings scripts/scan.ts",
+    "icon": "node --experimental-strip-types --no-warnings scripts/app-icon.ts",
+    "dist": "npm run build && npm run icon && electron-builder --win portable nsis",
+    "dist:dir": "npm run build && npm run icon && electron-builder --win dir"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  },
+  "author": "Switch2AI",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "build": {
+    "appId": "com.switch2ai.vibe-session-manager",
+    "productName": "Vibe Session Manager",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "Vibe-Session-Manager-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "artifactName": "Vibe-Session-Manager-Setup-${version}.${ext}",
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": false,
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "copyright": "Copyright © 2026 Switch2AI"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "jsx": "react-jsx", "lib": ["ES2023", "DOM", "DOM.Iterable"], "types": [] },
+  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/api.d.ts"]
+}

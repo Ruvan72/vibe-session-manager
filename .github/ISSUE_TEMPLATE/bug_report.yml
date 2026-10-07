@@ -1,0 +1,48 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not paste real transcripts or session files here**: they can contain secrets and customer data. Describe what you see, or cut a file down to the lines that matter and remove anything private.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a Claude Code session in VS Code
+        2. ...
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Shown in Settings.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+  - type: input
+    id: agents
+    attributes:
+      label: Claude Code / Codex version and where you run it
+      placeholder: Claude Code 2.1.290 in the VS Code extension
+  - type: dropdown
+    id: hooks
+    attributes:
+      label: Are the Claude Code hooks installed?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure

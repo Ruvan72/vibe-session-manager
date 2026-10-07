@@ -1,0 +1,11 @@
+node_modules/
+out/
+dist/
+*.log
+build/
+coverage/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/settings.local.json
