@@ -6,6 +6,10 @@ The list is a normal window: it shows in the taskbar and Alt+Tab, and remembers 
 
 Click a session to show its details (last prompt, last reply, time) and click again to hide them. Double-click opens the session in its editor.
 
+[![Demo video: the session list on top of VS Code, opening sessions to jump between editor windows](images/vibe-session-manager-show-activate-vscode.png)](images/vibe-session-manager-show-activate-vscode.mp4)
+
+▶ [Watch the 30-second demo](images/vibe-session-manager-show-activate-vscode.mp4) of opening sessions from the list.
+
 **Hide** (right side of the details) leaves a session out of the list, the counts, the tray badge and notifications. Its files are not touched, and it can be undone: the eye next to Sessions/Time shows hidden sessions (dimmed), and their details have **Unhide**. Hidden sessions are stored in `~/.vibe-session-manager/state.json`. Their time still counts in the Time tab.
 
 **Rename** a Claude Code session with the pencil that appears right of its title when you point at it, or with `F2`. A small field opens over the title with the title selected: `Enter` keeps the new name, `Esc` or clicking elsewhere cancels. The name is stored in the session's own transcript as a `custom-title` line, the same way Claude Code's `/rename` does it, so Claude Code shows it too. Codex sessions cannot be renamed here: Codex also keeps the title in a SQLite database the app does not touch, so Codex would go on showing the old name.

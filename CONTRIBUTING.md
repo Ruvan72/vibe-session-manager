@@ -47,7 +47,7 @@ Keep Electron out of `src/core` so it stays testable with plain Node.
 
 ## Working with fake data
 
-Do not develop against your real sessions if you can avoid it, and never point a development build at your real `~/.claude/settings.json` when you work on the hook installer. Use demo data instead:
+Use this demo data if needed:
 
 ```sh
 npm run demo-data -- C:\tmp\vsm-demo

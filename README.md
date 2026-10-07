@@ -25,7 +25,28 @@ When you run several AI coding agents at once, one per VS Code window or git wor
 - **Labels, rename and hide** to keep the list tidy.
 - **Time tracking**: active time per day, repo and session, with CSV export.
 
+<p align="center">
+  <a href="docs/images/vibe-session-manager-show-activate-vscode.mp4">
+    <img src="docs/images/vibe-session-manager-show-activate-vscode.png" alt="Demo video: the session list on top of VS Code, opening sessions to jump between editor windows" width="640">
+  </a>
+  <br>
+  <em>▶ <a href="docs/images/vibe-session-manager-show-activate-vscode.mp4">Watch the 30-second demo</a>: open the list, pick a session, land in the right VS Code window.</em>
+</p>
+
 See [docs/USAGE.md](docs/USAGE.md) for the full guide and all keyboard shortcuts.
+
+## Time spent
+
+The **Time** tab (`Ctrl+T` switches between Sessions and Time) shows how much active time went into your sessions, one day at a time:
+
+- **A total for the day**, then **each repo** with its subtotal, then **each session** with its active periods (for example `08:02–09:15 · 10:30–11:05`). A dot marks sessions that are working right now.
+- **Active time comes from the timestamps in the transcripts.** Activity with at most the *idle gap* in between (90 minutes by default, change it in Settings) belongs to one period. A longer pause ends the period and is not counted.
+- **Parallel sessions both count**, so a day's total can be longer than the time you sat at the desk.
+- **`←` and `→`** switch day, **Today** jumps back, and clicking a session opens it.
+- **Copy day as CSV** puts the day on the clipboard, separated by semicolons, with the columns `date`, `repo`, `worktree`, `branch`, `title`, `start`, `end`, `active_minutes`, `periods` and `agent`.
+- **Open time folder** shows the stored files: one JSON file per day in `~/.vibe-session-manager/time/`. They keep your time after Claude Code deletes old transcripts, and hidden sessions still count.
+
+Claude Code and Codex sessions are counted the same way.
 
 ## Install
 
