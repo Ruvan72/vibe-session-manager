@@ -54,7 +54,7 @@ Vibe Session Manager runs on **Windows 10 and 11**. macOS and Linux are not supp
 
 1. Download `Vibe-Session-Manager-Setup-<version>.exe` from the [latest release](https://github.com/Ruvan72/vibe-session-manager/releases/latest).
 2. Run it. It installs for your user only (no admin rights) and starts the app.
-3. The installer is not code-signed yet, so Windows SmartScreen says "Windows protected your PC". Click **More info** → **Run anyway**.
+3. The installer is not code-signed yet, so Windows SmartScreen says "Windows protected your PC". Click **More info** → **Run anyway**. To check the download first, compare `Get-FileHash <file>` in PowerShell with `SHA256SUMS.txt` in the release.
 
 There is also a portable `.exe` that needs no install. It unpacks itself on every start, so it starts a few seconds slower.
 

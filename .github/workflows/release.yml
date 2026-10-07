@@ -1,9 +1,14 @@
 name: Release
 
 # Push a tag like v0.2.0 to build the installer and portable .exe and attach them to a draft release.
+# Run it by hand (Actions > Release > Run workflow) to only build them, as a downloadable workflow artifact.
+#
+# Code signing with Azure Artifact Signing turns on when the AZURE_* secrets and variables below are set
+# (see CONTRIBUTING.md). Without them the build is unsigned.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,6 +16,14 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      SIGN_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      SIGN_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      SIGN_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+      SIGN_PUBLISHER: ${{ vars.AZURE_SIGNING_PUBLISHER }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,14 +34,40 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: Check that the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
-      - run: npm run dist -- --publish never
+      - name: Build
+        shell: bash
+        run: |
+          args=(--publish never)
+          if [ -n "$AZURE_CLIENT_SECRET" ] && [ -n "$SIGN_ENDPOINT" ]; then
+            echo "Signing with Azure Artifact Signing"
+            args+=(
+              "--config.win.azureSignOptions.endpoint=$SIGN_ENDPOINT"
+              "--config.win.azureSignOptions.codeSigningAccountName=$SIGN_ACCOUNT"
+              "--config.win.azureSignOptions.certificateProfileName=$SIGN_PROFILE"
+              "--config.win.azureSignOptions.publisherName=$SIGN_PUBLISHER"
+            )
+          else
+            echo "::warning::No signing secrets set: the build is unsigned."
+          fi
+          npm run dist -- "${args[@]}"
+      - name: Checksums
+        shell: bash
+        run: cd dist && sha256sum *.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibe-session-manager-${{ github.ref_name }}
+          path: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
       - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" \
-            --notes "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/main/CHANGELOG.md) for what changed." \
-            dist/*.exe
+            --notes "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/main/CHANGELOG.md) for what changed. SHA256SUMS.txt has the checksums of the files." \
+            dist/*.exe dist/SHA256SUMS.txt

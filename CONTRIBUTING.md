@@ -84,7 +84,25 @@ Maintainers only:
 
 1. Move the "Unreleased" entries in `CHANGELOG.md` under the new version and set `version` in `package.json`.
 2. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
-3. The release workflow builds the installer and portable `.exe` and attaches them to a draft GitHub release. Check it and publish it.
+3. The release workflow builds the installer and portable `.exe` and attaches them, with `SHA256SUMS.txt`, to a draft GitHub release. Check it and publish it.
+
+To try the release build without tagging, run the **Release** workflow by hand from the Actions tab. It builds the same files and keeps them as a workflow artifact, without making a release.
+
+### Code signing
+
+Releases are unsigned until signing is set up. The release workflow signs with [Azure Artifact Signing](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart) as soon as these are set in the repository's **Settings → Secrets and variables → Actions**:
+
+| Name | Kind | Value |
+|---|---|---|
+| `AZURE_TENANT_ID` | secret | Tenant ID of the app registration that may sign |
+| `AZURE_CLIENT_ID` | secret | Its application (client) ID |
+| `AZURE_CLIENT_SECRET` | secret | A client secret for it |
+| `AZURE_SIGNING_ENDPOINT` | variable | The signing account's endpoint, e.g. `https://weu.codesigning.azure.net` |
+| `AZURE_SIGNING_ACCOUNT` | variable | The signing account's name |
+| `AZURE_SIGNING_PROFILE` | variable | The certificate profile's name |
+| `AZURE_SIGNING_PUBLISHER` | variable | The certificate's common name (CN), exactly |
+
+The app registration needs the **Certificate Profile Signer** role on the certificate profile.
 
 ## Code of conduct
 
