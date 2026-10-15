@@ -1,7 +1,7 @@
 {
   "name": "vibe-session-manager",
   "productName": "Vibe Session Manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "One overview of all local Claude Code and Codex sessions on Windows: which are waiting for you, what each is about, and a jump to the right editor window.",
   "keywords": [
