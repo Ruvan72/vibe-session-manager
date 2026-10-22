@@ -962,6 +962,16 @@ svg {
   stroke-width: 1.6;
 }
 
+.agent-cowork .bg {
+  fill: #d97757;
+  stroke: none;
+}
+
+.agent-cowork .fg {
+  stroke: #fff;
+  stroke-width: 1.3;
+}
+
 .row.light-grey .agent-icon {
   opacity: 0.75;
 }

@@ -1,5 +1,6 @@
 export * from './store.ts'
 export * from './codex.ts'
+export * from './cowork.ts'
 export * from './hooks.ts'
 export * from './launcher.ts'
 export * from './model.ts'

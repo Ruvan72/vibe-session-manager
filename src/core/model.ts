@@ -82,6 +82,8 @@ export function applyUnreadMark(l: LightResult, t: TranscriptState, hook: HookSt
 const EDITORS: Record<string, string> = {
   'claude-vscode': 'VS Code',
   'claude-desktop': 'Claude Desktop',
+  // Cowork in the Claude desktop app.
+  'local-agent': 'Claude app',
   cli: 'Terminal',
   'sdk-cli': 'SDK',
   'sdk-ts': 'SDK',

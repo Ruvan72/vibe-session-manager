@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Cowork sessions from the Claude desktop app are listed next to Claude Code and Codex sessions, with the app's title, the chosen folder, live status and time tracking. See the Cowork section in [docs/USAGE.md](docs/USAGE.md).
+
 ## [0.1.0] - 2026-10-07
 
 First public release.

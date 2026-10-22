@@ -2,8 +2,8 @@
 
 export type Light = 'red' | 'green' | 'yellow' | 'grey'
 export type LiveStatus = 'busy' | 'idle' | 'closed'
-/** Which coding agent the session belongs to. */
-export type Agent = 'claude' | 'codex'
+/** Which agent the session belongs to: Claude Code, OpenAI Codex, or Cowork in the Claude desktop app. */
+export type Agent = 'claude' | 'codex' | 'cowork'
 
 export interface SessionView {
   id: string

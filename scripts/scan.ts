@@ -1,11 +1,12 @@
-// Prints the session list from the real ~/.claude and ~/.codex, like the prototype scanner (spec appendix A).
-// C = Claude Code, X = Codex.
+// Prints the session list from the real ~/.claude, ~/.codex and Claude Desktop's Cowork folder, like the
+// prototype scanner (spec appendix A). C = Claude Code, X = Codex, W = Cowork.
 // Usage: npm run scan [-- <search words>]
 // Uses a temporary copy of the app's seen marks and hook events, so it shows the same lights as
 // the app without writing to the app's data dir.
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { findCoworkDir } from '../src/core/cowork.ts'
 import { SessionStore } from '../src/core/store.ts'
 
 const query = process.argv.slice(2).join(' ')
@@ -16,6 +17,7 @@ for (const f of ['state.json', 'events.jsonl']) if (existsSync(path.join(appData
 const store = new SessionStore({
   claudeDir: process.env.VSM_CLAUDE_DIR ?? path.join(os.homedir(), '.claude'),
   codexDir: process.env.VSM_CODEX_DIR ?? path.join(os.homedir(), '.codex'),
+  coworkDir: process.env.VSM_COWORK_DIR ?? findCoworkDir() ?? undefined,
   dataDir,
   isAlive: process.env.VSM_ASSUME_ALIVE ? () => true : undefined
 })
@@ -34,7 +36,7 @@ for (const s of rows) {
   const when = new Date(s.lastActivity).toISOString().slice(5, 16).replace('T', ' ')
   const wt = s.worktree ? `[${s.worktree}]` : ''
   console.log(
-    `${when} ${s.agent === 'codex' ? 'X' : 'C'} ${icon[s.light]}${s.lightGuess ? '?' : ' '} ${s.status.padEnd(6)} ${dur(s.activeMs).padStart(6)} ${(s.repo + wt).slice(0, 40).padEnd(40)} ${(s.branch ?? '').slice(0, 28).padEnd(28)} ${s.title.slice(0, 60)}${s.light !== 'grey' ? '  -- ' + s.reason : ''}${s.error ? '  !! ' + s.error : ''}`
+    `${when} ${s.agent === 'codex' ? 'X' : s.agent === 'cowork' ? 'W' : 'C'} ${icon[s.light]}${s.lightGuess ? '?' : ' '} ${s.status.padEnd(6)} ${dur(s.activeMs).padStart(6)} ${(s.repo + wt).slice(0, 40).padEnd(40)} ${(s.branch ?? '').slice(0, 28).padEnd(28)} ${s.title.slice(0, 60)}${s.light !== 'grey' ? '  -- ' + s.reason : ''}${s.error ? '  !! ' + s.error : ''}`
   )
   if (hits?.get(s.id)) console.log(`      ${hits.get(s.id)}`)
 }

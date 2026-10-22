@@ -1,5 +1,6 @@
 // Keeps the full session list up to date by polling the data sources (spec 5): Claude Code's
-// transcripts, live-status files and hook events, and Codex's rollouts (spec 5.6).
+// transcripts, live-status files and hook events, Codex's rollouts (spec 5.6) and the Claude
+// desktop app's Cowork sessions.
 
 import { EventEmitter } from 'node:events'
 import { readdir, stat } from 'node:fs/promises'
@@ -7,6 +8,7 @@ import path from 'node:path'
 import type { Agent, DayFile, HooksStatus, LabelIcon, SearchHit, SessionView, Snapshot } from '../shared/types.ts'
 import { LabelStore } from './labels.ts'
 import { CodexIndex, codexHookState, codexLive, CodexReader, listCodexRollouts, readCodexLocks } from './codex.ts'
+import { CoworkIndex, coworkHomeDir, coworkRepo, listCoworkSessions, type CoworkSource } from './cowork.ts'
 import { compactEvents, EventsReader } from './events.ts'
 import { EVENTS_FILE, getHooksStatus } from './hooks.ts'
 import { readLiveSessions, type LiveInfo } from './live.ts'
@@ -22,6 +24,8 @@ export interface StoreOptions {
   claudeDir: string
   /** ~/.codex. Leave out to list Claude Code sessions only. */
   codexDir?: string
+  /** Claude Desktop's local-agent-mode-sessions folder (see cowork.ts). Leave out to skip Cowork sessions. */
+  coworkDir?: string
   dataDir: string
   pollMs?: number
   /** Activity gaps longer than this end an active period. Default 90 minutes. */
@@ -46,7 +50,7 @@ const yieldToEventLoop = () => new Promise<void>((r) => setImmediate(r))
 
 type Reader = TranscriptReader | CodexReader
 
-/** One session's files on disk: a Claude Code transcript, or a Codex thread's rollout files in order. */
+/** One session's files on disk: a Claude Code or Cowork transcript, or a Codex thread's rollout files in order. */
 interface Source {
   sessionId: string
   agent: Agent
@@ -54,7 +58,7 @@ interface Source {
 }
 
 function newReader(src: Source): Reader {
-  return src.agent === 'codex' ? new CodexReader(src.sessionId, src.files) : new TranscriptReader(src.sessionId, src.files[0])
+  return src.agent === 'codex' ? new CodexReader(src.sessionId, src.files) : new TranscriptReader(src.sessionId, src.files[0], src.agent)
 }
 
 export class SessionStore extends EventEmitter<StoreEvents> {
@@ -73,6 +77,9 @@ export class SessionStore extends EventEmitter<StoreEvents> {
   private events: EventsReader
   private codexIndex: CodexIndex | null
   private codexLocks = new Set<string>()
+  private coworkIndex: CoworkIndex | null
+  /** The Cowork sources of the last listing, by session id. */
+  private coworkSources = new Map<string, CoworkSource>()
   private repos = new RepoResolver()
   private index = new SearchIndex()
   private searchVersion = 0
@@ -97,6 +104,7 @@ export class SessionStore extends EventEmitter<StoreEvents> {
     this.labels = new LabelStore(opts.dataDir)
     for (const id of this.seen.takeLegacyPendingMerge()) this.labels.set(id, 'pending-merge', true)
     this.codexIndex = opts.codexDir ? new CodexIndex(path.join(opts.codexDir, 'session_index.jsonl')) : null
+    this.coworkIndex = opts.coworkDir ? new CoworkIndex() : null
   }
 
   async start(): Promise<void> {
@@ -169,7 +177,8 @@ export class SessionStore extends EventEmitter<StoreEvents> {
    */
   async rename(id: string, title: string): Promise<boolean> {
     const reader = this.readers.get(id)
-    if (!(reader instanceof TranscriptReader)) return false
+    // The Claude app keeps a Cowork session's title in its own file, which would win over the transcript.
+    if (!(reader instanceof TranscriptReader) || reader.agent !== 'claude') return false
     if (!(await appendCustomTitle(reader.filePath, id, title))) return false
     // Two reads of the same transcript at once would apply the new lines twice.
     while (this.polling) await new Promise((r) => setTimeout(r, 10))
@@ -218,6 +227,8 @@ export class SessionStore extends EventEmitter<StoreEvents> {
     await this.codexIndex?.update()
     if (this.opts.codexDir) this.codexLocks = await readCodexLocks(path.join(this.opts.codexDir, 'thread-writer-locks'))
     const sources = await this.listSources()
+    await this.coworkIndex?.update([...this.coworkSources.values()])
+    for (const [id, info] of (await this.readCoworkLive(Date.now(), true)).live) this.live.set(id, info)
     const withTime = await Promise.all(sources.map(async (f) => ({ ...f, mtime: (await stat(f.files[f.files.length - 1]).catch(() => null))?.mtimeMs ?? 0 })))
     withTime.sort((a, b) => b.mtime - a.mtime)
 
@@ -240,10 +251,44 @@ export class SessionStore extends EventEmitter<StoreEvents> {
   }
 
   private async listSources(): Promise<Source[]> {
-    const [claude, codex] = await Promise.all([this.listTranscripts(), this.opts.codexDir ? listCodexRollouts(path.join(this.opts.codexDir, 'sessions')) : null])
+    const [claude, codex, cowork] = await Promise.all([
+      this.listTranscripts(),
+      this.opts.codexDir ? listCodexRollouts(path.join(this.opts.codexDir, 'sessions')) : null,
+      this.opts.coworkDir ? listCoworkSessions(this.opts.coworkDir) : null
+    ])
     const out: Source[] = claude.map((f) => ({ sessionId: f.sessionId, agent: 'claude', files: [f.filePath] }))
     for (const [sessionId, files] of codex ?? []) out.push({ sessionId, agent: 'codex', files })
+    this.coworkSources = new Map()
+    for (const c of cowork ?? []) {
+      // A Claude Code session id is unique; a Cowork transcript never shares one with ~/.claude.
+      if (this.coworkSources.has(c.sessionId)) continue
+      this.coworkSources.set(c.sessionId, c)
+      out.push({ sessionId: c.sessionId, agent: 'cowork', files: [c.filePath] })
+    }
     return out
+  }
+
+  /**
+   * Live status of Cowork sessions, from the status file in each session's own config folder. Only
+   * sessions that run on the host are checked: in Cowork's VM the pids are the VM's. Quiet sessions
+   * are skipped except on slow rounds, so an idle machine does not read dozens of folders a second.
+   */
+  private async readCoworkLive(now: number, all: boolean): Promise<{ live: Map<string, LiveInfo>; checked: Set<string> }> {
+    const live = new Map<string, LiveInfo>()
+    const checked = new Set<string>()
+    if (!this.coworkIndex) return { live, checked }
+    await Promise.all(
+      [...this.coworkSources.values()].map(async (c) => {
+        const meta = this.coworkIndex!.metas.get(c.sessionId)
+        if (meta && !meta.hostLoop) return
+        const reader = this.readers.get(c.sessionId)
+        if (!all && !this.live.has(c.sessionId) && reader && now - reader.mtimeMs > QUIET_MS) return
+        checked.add(c.sessionId)
+        const info = (await readLiveSessions(path.join(c.sessionDir, '.claude', 'sessions'), this.opts.isAlive)).get(c.sessionId)
+        if (info) live.set(c.sessionId, info)
+      })
+    )
+    return { live, checked }
   }
 
   private async listTranscripts(): Promise<{ sessionId: string; filePath: string }[]> {
@@ -287,6 +332,10 @@ export class SessionStore extends EventEmitter<StoreEvents> {
       const slowRound = ++this.pollCount % SLOW_EVERY === 0
 
       const live = await readLiveSessions(this.sessionsDir, this.opts.isAlive)
+      const cowork = await this.readCoworkLive(Date.now(), slowRound)
+      for (const [id, info] of cowork.live) live.set(id, info)
+      // Cowork sessions not checked this round keep their last known status.
+      for (const [id, info] of this.live) if (this.coworkSources.has(id) && !cowork.checked.has(id)) live.set(id, info)
       for (const id of new Set([...live.keys(), ...this.live.keys()])) {
         const a = live.get(id)
         const b = this.live.get(id)
@@ -305,6 +354,7 @@ export class SessionStore extends EventEmitter<StoreEvents> {
       }
 
       const sources = await this.listSources()
+      for (const id of (await this.coworkIndex?.update([...this.coworkSources.values()])) ?? []) changed.add(id)
       const present = new Set<string>()
       const now = Date.now()
       const toRead: Reader[] = []
@@ -379,9 +429,27 @@ export class SessionStore extends EventEmitter<StoreEvents> {
         const name = this.codexIndex?.names.get(id)
         if (name) t = { ...t, customTitle: name }
       }
+      let repo = null
+      const cowork = reader.agent === 'cowork' ? this.coworkSources.get(id) : undefined
+      if (cowork) {
+        const meta = this.coworkIndex?.metas.get(id) ?? null
+        if (meta?.archived) {
+          if (prev) {
+            this.views.delete(id)
+            this.viewKeys.delete(id)
+            if (this.index.delete(id)) this.searchVersion++
+            any = true
+          }
+          continue
+        }
+        // The Claude app's title wins; the branch is "HEAD" in the scratch folder and says nothing.
+        t = { ...t, customTitle: meta?.title ?? t.customTitle, homeDir: coworkHomeDir(meta, cowork.sessionDir), branches: [] }
+        repo = meta?.folders[0] ? this.repos.get(meta.folders[0]) : coworkRepo(cowork.sessionDir)
+      }
       if (t.firstTs === null && !live) continue
       const intervals = activityIntervals(t.activity, this.idleGapMs)
-      const view = buildView(t, live, hook, this.repos.get(t.homeDir ?? t.firstCwd ?? path.dirname(t.filePath)), this.seen.get(id), intervals, this.seen.unreadAt(id), reader.agent)
+      repo ??= this.repos.get(t.homeDir ?? t.firstCwd ?? path.dirname(t.filePath))
+      const view = buildView(t, live, hook, repo, this.seen.get(id), intervals, this.seen.unreadAt(id), reader.agent)
       const err = this.errors.get(id)
       if (err) view.error = err
       view.hidden = this.seen.isHidden(id)
