@@ -221,14 +221,16 @@ function markConvo(s: TranscriptState, role: 'user' | 'assistant', t: number | n
 
 /** Keeps a transcript's parsed state up to date as the file grows. */
 export class TranscriptReader {
-  readonly agent = 'claude' as const
+  /** Cowork sessions are Claude Code transcripts too, in the desktop app's own folders. */
+  readonly agent: 'claude' | 'cowork'
   readonly tail: JsonlTail
   state: TranscriptState
 
   readonly sessionId: string
   readonly filePath: string
 
-  constructor(sessionId: string, filePath: string) {
+  constructor(sessionId: string, filePath: string, agent: 'claude' | 'cowork' = 'claude') {
+    this.agent = agent
     this.sessionId = sessionId
     this.filePath = filePath
     this.tail = new JsonlTail(filePath)

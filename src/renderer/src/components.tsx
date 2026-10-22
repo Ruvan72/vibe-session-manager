@@ -32,7 +32,7 @@ export function TreeIcon() {
   )
 }
 
-const AGENT_NAME: Record<Agent, string> = { claude: 'Claude Code', codex: 'Codex' }
+const AGENT_NAME: Record<Agent, string> = { claude: 'Claude Code', codex: 'Codex', cowork: 'Cowork' }
 
 // Claude's starburst: ten rays of alternating length around the centre.
 const CLAUDE_RAYS = Array.from({ length: 10 }, (_, i) => {
@@ -42,13 +42,26 @@ const CLAUDE_RAYS = Array.from({ length: 10 }, (_, i) => {
   return `M${p(1.3)}L${p(r)}`
 }).join('')
 
-/** Which agent a session belongs to: Claude's starburst or Codex's terminal prompt. */
+// The same starburst, smaller, for the tile of the Cowork icon.
+const COWORK_RAYS = Array.from({ length: 10 }, (_, i) => {
+  const a = ((i * 36 - 90) * Math.PI) / 180
+  const r = i % 2 ? 3.6 : 4.6
+  const p = (d: number) => `${(8 + d * Math.cos(a)).toFixed(2)} ${(8 + d * Math.sin(a)).toFixed(2)}`
+  return `M${p(1)}L${p(r)}`
+}).join('')
+
+/** Which agent a session belongs to: Claude's starburst, the starburst on a tile for Cowork, or Codex's terminal prompt. */
 export function AgentIcon({ agent }: { agent: Agent }) {
   return (
     <svg className={`agent-icon agent-${agent}`} viewBox="0 0 16 16" aria-label={AGENT_NAME[agent]} role="img">
       <title>{AGENT_NAME[agent]}</title>
       {agent === 'claude' ? (
         <path d={CLAUDE_RAYS} />
+      ) : agent === 'cowork' ? (
+        <>
+          <rect x="1" y="1.5" width="14" height="13" rx="3.5" className="bg" />
+          <path d={COWORK_RAYS} className="fg" />
+        </>
       ) : (
         <>
           <rect x="1" y="1.5" width="14" height="13" rx="3.5" className="bg" />
@@ -326,7 +339,9 @@ export function Detail({ s, labels, labelMenuOpen, onLabelMenu, onJump, onSeen, 
             Mark as unread
           </button>
         )}
-        <button onClick={() => copy('resume', s.agent === 'codex' ? `codex resume ${s.id}` : `claude --resume ${s.id}`)}>{copied === 'resume' ? 'Copied' : 'Copy resume command'}</button>
+        {s.agent !== 'cowork' && (
+          <button onClick={() => copy('resume', s.agent === 'codex' ? `codex resume ${s.id}` : `claude --resume ${s.id}`)}>{copied === 'resume' ? 'Copied' : 'Copy resume command'}</button>
+        )}
         <button onClick={() => copy('id', s.id)}>{copied === 'id' ? 'Copied' : 'Copy id'}</button>
         <div className="labels-anchor">
           <button className={`labels-btn ${s.labels.length ? 'has' : ''}`} aria-expanded={labelMenuOpen} title="Labels (Ctrl+L)" onClick={() => onLabelMenu(!labelMenuOpen)}>

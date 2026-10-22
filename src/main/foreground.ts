@@ -30,10 +30,11 @@ export function foregroundWindowTitle(): Promise<string | null> {
 
 /**
  * Whether a window with this title shows the session: a VS Code / Cursor window on one of its folder
- * names, or the Codex app for threads started there.
+ * names, or the agent's own app (the Codex app for threads started there, the Claude app for Cowork).
  */
-export function titleShowsSession(title: string, folderNames: string[], codexApp: boolean): boolean {
-  if (codexApp) return /^(Codex|ChatGPT)\b/.test(title)
+export function titleShowsSession(title: string, folderNames: string[], ownApp: 'codex' | 'claude' | null): boolean {
+  if (ownApp === 'codex') return /^(Codex|ChatGPT)\b/.test(title)
+  if (ownApp === 'claude') return /^Claude\b/.test(title) && !/Visual Studio Code|Cursor/.test(title)
   if (!/Visual Studio Code|Cursor/.test(title)) return false
   const parts = title.split(/ [-–—] /).map((p) => p.replace(/\s*\(Workspace\)$/, '').trim().toLowerCase())
   return folderNames.some((n) => n && parts.includes(n.toLowerCase()))

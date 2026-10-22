@@ -14,7 +14,9 @@ export interface LaunchDeps {
   delay(ms: number): Promise<void>
 }
 
-export function resumeCommand(s: Pick<SessionView, 'id' | 'agent'>): string {
+/** The terminal command that resumes the session, or null when there is none (Cowork sessions live in the Claude app). */
+export function resumeCommand(s: Pick<SessionView, 'id' | 'agent'>): string | null {
+  if (s.agent === 'cowork') return null
   return s.agent === 'codex' ? `codex resume ${s.id}` : `claude --resume ${s.id}`
 }
 
@@ -37,10 +39,16 @@ const CODEX_APP = new Set(['codex_work_desktop', 'Codex Desktop'])
 /** Sessions started from the editor extension can be opened in the editor; the rest are resumed in a terminal. */
 export function opensInEditor(s: Pick<SessionView, 'entrypoint' | 'agent'>): boolean {
   if (s.agent === 'codex') return s.entrypoint === 'codex_vscode'
+  if (s.agent === 'cowork') return false
   return !s.entrypoint || s.entrypoint === 'claude-vscode'
 }
 
 export async function jumpToSession(s: SessionView, settings: AppSettings, deps: LaunchDeps): Promise<JumpResult> {
+  if (s.agent === 'cowork') {
+    // The Claude app has no link to a session. Its sidebar lists them by title, so that is what gets copied.
+    deps.copyText(s.title)
+    return { ok: false, message: `Cowork sessions open in the Claude app: look for "${s.title}" there. Title copied.` }
+  }
   if (s.agent === 'codex' && s.entrypoint && CODEX_APP.has(s.entrypoint)) {
     try {
       await deps.openUri(codexAppUri(s.id))
@@ -50,9 +58,10 @@ export async function jumpToSession(s: SessionView, settings: AppSettings, deps:
       return { ok: false, message: `Could not open the Codex app (${e?.message ?? e}). Thread id copied.` }
     }
   }
-  if (!opensInEditor(s)) {
-    deps.copyText(resumeCommand(s))
-    return { ok: false, message: `Started from ${s.editor}. Resume command copied: ${resumeCommand(s)}` }
+  const resume = resumeCommand(s)
+  if (!opensInEditor(s) && resume) {
+    deps.copyText(resume)
+    return { ok: false, message: `Started from ${s.editor}. Resume command copied: ${resume}` }
   }
   try {
     await deps.runEditor(settings.editorCommand, deps.editorTarget?.(s.homeDir) ?? s.homeDir)

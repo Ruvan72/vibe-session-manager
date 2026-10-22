@@ -21,6 +21,7 @@ import {
 } from 'electron'
 import {
   adoptLegacyDataDir,
+  findCoworkDir,
   HOOK_EVENTS,
   installHooks,
   jumpToSession,
@@ -41,6 +42,8 @@ import { drawAppIcon, drawTrayIcon, SPINNER_FRAMES } from './icon.ts'
 const APP_NAME = 'Vibe Session Manager'
 const claudeDir = process.env.VSM_CLAUDE_DIR ?? path.join(os.homedir(), '.claude')
 const codexDir = process.env.VSM_CODEX_DIR ?? path.join(os.homedir(), '.codex')
+/** Claude Desktop's Cowork sessions, when the app is installed. */
+const coworkDir = process.env.VSM_COWORK_DIR ?? findCoworkDir() ?? undefined
 const dataDir = process.env.VSM_DATA_DIR ?? path.join(os.homedir(), '.vibe-session-manager')
 const screenshotPath = process.env.VSM_SCREENSHOT
 const HIDDEN_ARG = '--hidden'
@@ -85,6 +88,7 @@ function start(): void {
     store = new SessionStore({
       claudeDir,
       codexDir,
+      coworkDir,
       dataDir,
       idleGapMs: settings.idleGapMinutes * 60_000,
       isAlive: process.env.VSM_ASSUME_ALIVE ? () => true : undefined
@@ -364,7 +368,8 @@ async function pingFinished(s: SessionView): Promise<void> {
     const title = await foregroundWindowTitle()
     const target = editorTarget(s.homeDir, readEditorState(editorStorageFile()))
     const names = [path.basename(s.homeDir), path.basename(target).replace(/\.code-workspace$/, '')]
-    if (title && titleShowsSession(title, names, s.agent === 'codex' && s.editor === 'Codex app')) return
+    const ownApp = s.agent === 'cowork' ? 'claude' : s.agent === 'codex' && s.editor === 'Codex app' ? 'codex' : null
+    if (title && titleShowsSession(title, names, ownApp)) return
   }
   // Several sessions finishing together make one sound.
   if (Date.now() - lastPingAt < 1500) return

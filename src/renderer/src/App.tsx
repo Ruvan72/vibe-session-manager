@@ -310,7 +310,7 @@ export function App() {
           ref={searchRef}
           autoFocus
           value={query}
-          placeholder="Search chats, titles, repos, branches, claude/codex…"
+          placeholder="Search chats, titles, repos, branches, claude/codex/cowork…"
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}
         />

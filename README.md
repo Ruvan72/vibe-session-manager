@@ -17,7 +17,7 @@ When you run several AI coding agents at once, one per VS Code window or git wor
 
 ## Features
 
-- **Every local session in one list**: Claude Code (VS Code, Cursor, CLI) and OpenAI Codex (app, VS Code extension, CLI), across all windows and worktrees.
+- **Every local session in one list**: Claude Code (VS Code, Cursor, CLI), Cowork sessions from the Claude desktop app, and OpenAI Codex (app, VS Code extension, CLI), across all windows and worktrees.
 - **A traffic light per session**: red when it waits for your permission or answer, green while it works, yellow when it finished a turn you have not read, grey when there is nothing to do.
 - **Jump to a session**: double-click opens the right editor window with the session open. `Ctrl+Alt+Enter` goes straight to the most urgent one.
 - **Tray badge, notifications and a "blop"** when a session needs you, but not when you are already looking at its window.
@@ -46,7 +46,7 @@ The **Time** tab (`Ctrl+T` switches between Sessions and Time) shows how much ac
 - **Copy day as CSV** puts the day on the clipboard, separated by semicolons, with the columns `date`, `repo`, `worktree`, `branch`, `title`, `start`, `end`, `active_minutes`, `periods` and `agent`.
 - **Open time folder** shows the stored files: one JSON file per day in `~/.vibe-session-manager/time/`. They keep your time after Claude Code deletes old transcripts, and hidden sessions still count.
 
-Claude Code and Codex sessions are counted the same way.
+Claude Code, Cowork and Codex sessions are counted the same way.
 
 ## Install
 
@@ -67,7 +67,7 @@ For reliable red and yellow lights for Claude Code, click **Install hooks** in t
 Your transcripts can contain anything, so here is exactly what the app does with them:
 
 - **Nothing leaves your machine.** The app makes no network requests, has no telemetry and no auto-update.
-- **It reads** `~/.claude` (transcripts and live session status), `~/.codex` (Codex sessions and titles), and VS Code's or Cursor's own `storage.json` to see which folders are open.
+- **It reads** `~/.claude` (transcripts and live session status), the Claude desktop app's `local-agent-mode-sessions` folder (Cowork transcripts and titles), `~/.codex` (Codex sessions and titles), and VS Code's or Cursor's own `storage.json` to see which folders are open.
 - **It writes to only three places outside its own folder, and only when you act:**
   - **Install hooks** adds one hook per event to `~/.claude/settings.json`. Your existing settings and hooks are kept, a backup is saved as `settings.json.vsm-backup`, and **Remove hooks** takes them out again. The hook records session id, event name, time and notification text. It never records prompts.
   - **Rename** appends one `custom-title` line to that session's transcript, exactly as Claude Code's own `/rename` does.
@@ -78,9 +78,10 @@ Your transcripts can contain anything, so here is exactly what the app does with
 
 - Windows only for now.
 - Codex does not write anything to disk while it waits for approval, so a waiting Codex session shows as working (green), not red.
+- Cowork sessions cannot be opened from the app: the Claude desktop app has no link to a session, so double-click copies the title to look for there. Chats in the Claude app's Chat tab are kept on Anthropic's servers and are not listed.
 - Jumping to a session relies on `vscode://` links after opening the folder. It has not been tested on every setup; if it opens the wrong window, a companion VS Code extension is planned.
 - Sessions started from Claude Desktop or the CLI are not reopened in a terminal yet; the app copies the `claude --resume <id>` command instead.
-- The session file formats of Claude Code and Codex are not documented, so an update to either can break parts of the app until it is adapted.
+- The session file formats of Claude Code, Cowork and Codex are not documented, so an update to any of them can break parts of the app until it is adapted.
 
 See the [open issues](https://github.com/Ruvan72/vibe-session-manager/issues) for what is planned.
 

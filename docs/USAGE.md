@@ -16,7 +16,7 @@ Click a session to show its details (last prompt, last reply, time) and click ag
 
 **Labels** (details, or `Ctrl+L`) mark sessions as to-dos. It opens a checklist with **Pending merge**, **Needs attention**, **Review with peer** and any labels you added yourself. Below the list you can type a new label, pick one of 10 icons and add it. The × next to a label deletes it everywhere. A session shows its labels on its row, comma-separated, and each label in use gets a chip next to **Open only** that filters the list. Labelled sessions stay in the list whatever the time range is. Labels do not change the traffic light or the tray badge. They are stored in `~/.vibe-session-manager/labels.json`.
 
-**Search** matches titles, repo, worktree and branch names, folders and the conversation itself (prompts, replies and pasted text, not tool output). Type `claude` or `codex` to see only one agent.
+**Search** matches titles, repo, worktree and branch names, folders and the conversation itself (prompts, replies and pasted text, not tool output). Type `claude`, `codex` or `cowork` to see only one agent.
 
 ## Shortcuts
 
@@ -78,6 +78,27 @@ Status and activity:
 Subagent and review threads are left out, as in Codex's own list. A new Codex chat shows up once you have sent its first message; Codex does not save it before that.
 
 Double-clicking a session opens it where it was started: `codex://threads/<id>` for the Codex app, the folder plus `vscode://openai.chatgpt/local/<id>` for the VS Code extension, and for the CLI the command `codex resume <id>` is copied.
+
+## Cowork
+
+Cowork sessions from the Claude desktop app are listed too. Cowork runs Claude Code underneath, but gives every session its own private config folder, so these transcripts never reach `~/.claude`. The icon left of the title is the starburst on an orange tile.
+
+The app reads Claude Desktop's `local-agent-mode-sessions` folder (under `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\` for the Microsoft Store build, else `%APPDATA%\Claude\`; set `VSM_COWORK_DIR` to use another folder) and never writes to it:
+
+- each session's transcript under `local_<id>/.claude/projects/`, for prompts, replies and activity,
+- `local_<id>.json` for the title the Claude app shows, the folder you gave the session and whether it is archived,
+- `local_<id>/.claude/sessions/` for the live status while the session runs on this machine.
+
+What is different from Claude Code sessions:
+
+- **Repo** is the folder you gave the session. Sessions without a folder are grouped under **Cowork**, and their folder is the session's `outputs` folder, where Cowork puts the files it makes.
+- **Title** is the one from the Claude app, so renaming here is not offered.
+- **No branch**: Cowork does not work in a git checkout.
+- **Red and green** come from the live status file, like Claude Code without hooks, so a waiting session is a guess. Sessions that run in Cowork's Linux VM show no live status.
+- **Archived** sessions are left out, as in the Claude app.
+- Double-click cannot open the session: the Claude app has no link to one. The title is copied, so it can be found in the Cowork sidebar.
+
+Chats in the Claude app's Chat tab are kept on Anthropic's servers and are not on your disk, so they are not listed.
 
 ## Time tracking
 
