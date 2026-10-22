@@ -7,6 +7,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 
 - Cowork sessions from the Claude desktop app are listed next to Claude Code and Codex sessions, with the app's title, the chosen folder, live status and time tracking. See the Cowork section in [docs/USAGE.md](docs/USAGE.md).
+## [0.1.1] - 2026-10-15
+
+### Changed
+
+- The search field is framed in the accent colour while a search is applied, so it is obvious the list is filtered.
+- Releases ship with a `SHA256SUMS.txt` file, and builds are signed when signing is configured.
 
 ## [0.1.0] - 2026-10-07
 
@@ -23,5 +29,6 @@ First public release.
 - Time tracking per day, repo and session, with CSV export.
 - Windows installer and portable `.exe`.
 
-[Unreleased]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Ruvan72/vibe-session-manager/releases/tag/v0.1.0

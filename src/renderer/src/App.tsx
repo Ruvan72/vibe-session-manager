@@ -304,7 +304,7 @@ export function App() {
         <TimeView snap={snap} onJump={jumpById} onMessage={setToast} />
       ) : (
       <>
-      <div className="search">
+      <div className={`search ${query ? 'active' : ''}`}>
         <svg viewBox="0 0 16 16" aria-hidden><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5 14 14" /></svg>
         <input
           ref={searchRef}

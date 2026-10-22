@@ -148,6 +148,18 @@ svg {
   border-color: var(--accent);
 }
 
+/* A search is applied: frame the field so it is obvious the list is filtered. */
+.search.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+
+.search.active .clear {
+  color: var(--accent);
+}
+
 .search input {
   flex: 1;
   min-width: 0;
