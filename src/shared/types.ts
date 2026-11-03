@@ -94,6 +94,10 @@ export interface AppSettings {
   shortcuts: { openList: string; jumpUrgent: string }
   /** Text size as an Electron zoom level (0 = 100 %). Changed with Ctrl+plus, Ctrl+minus and Ctrl+0. */
   zoomLevel: number
+  /** Show the 5-hour and weekly plan usage under the title bar. */
+  showUsage: boolean
+  /** Ask api.anthropic.com for live Claude usage, with the sign-in token Claude Code stores. Off until the user turns it on. */
+  usageFromApi: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -105,7 +109,39 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchDelayMs: 700,
   idleGapMinutes: 90,
   shortcuts: { openList: 'CommandOrControl+Alt+Space', jumpUrgent: 'CommandOrControl+Alt+Enter' },
-  zoomLevel: 0
+  zoomLevel: 0,
+  showUsage: true,
+  usageFromApi: false
+}
+
+/** One usage window (5 hours or a week). */
+export interface UsageWindow {
+  /** 0–100. */
+  percent: number
+  /** Epoch ms when the window resets; null when no window is running. */
+  resetsAt: number | null
+}
+
+/** Where a usage reading came from: Claude's API, a status line cache file, or Codex's session logs. */
+export type UsageSource = 'api' | 'statusline' | 'log'
+
+export interface AgentUsage {
+  source: UsageSource
+  /** Epoch ms of the reading. */
+  updatedAt: number
+  fiveHour: UsageWindow | null
+  sevenDay: UsageWindow | null
+}
+
+export interface UsageSnapshot {
+  /** The user's "show usage" setting. */
+  enabled: boolean
+  /** The user's "live Claude usage" setting. */
+  fromApi: boolean
+  claude: AgentUsage | null
+  codex: AgentUsage | null
+  /** Why live Claude usage is not available right now, for the UI. */
+  claudeNote: string | null
 }
 
 export interface JumpResult {

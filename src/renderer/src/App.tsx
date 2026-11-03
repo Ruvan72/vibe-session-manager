@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SettingsInfo } from '../../shared/api.ts'
-import type { LabelDef, Light, SearchHit, SessionView, Snapshot } from '../../shared/types.ts'
-import { AgentIcon, Detail, LightIcon, RepoFilter, SettingsPanel, TimeView, TitleEditor, Where } from './components.tsx'
+import type { LabelDef, Light, SearchHit, SessionView, Snapshot, UsageSnapshot } from '../../shared/types.ts'
+import { AgentIcon, Detail, LightIcon, RepoFilter, SettingsPanel, TimeView, TitleEditor, UsageStrip, Where } from './components.tsx'
 import { LabelGlyph, LabelList } from './labels.tsx'
 import { playBlop } from './sound.ts'
 import { flattenGroups, groupSessions, LIGHT_LABEL, relTime, repoOptions, visibleSessions, type Filters, type Range } from './view.ts'
 
 const api = window.api
 const EMPTY: Snapshot = { sessions: [], hooks: 'none', scanning: true, counts: { red: 0, yellow: 0, green: 0 }, searchVersion: 0, labels: [] }
+
+const NO_USAGE: UsageSnapshot = { enabled: false, fromApi: false, claude: null, codex: null, claudeNote: null }
 
 type Tab = 'sessions' | 'time'
 
@@ -23,6 +25,7 @@ export function App() {
   const [labelMenuFor, setLabelMenuFor] = useState<string | null>(null)
   const [renameFor, setRenameFor] = useState<string | null>(null)
   const [settings, setSettings] = useState<SettingsInfo | null>(null)
+  const [usage, setUsage] = useState<UsageSnapshot>(NO_USAGE)
   const [toast, setToast] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   // Debug helper (VSM_DEBUG): expand the first row once the list has rows.
@@ -36,8 +39,10 @@ export function App() {
 
   useEffect(() => {
     void api.getSnapshot().then(setSnap)
+    void api.getUsage().then(setUsage)
     const offs = [
       api.onSnapshot(setSnap),
+      api.onUsage(setUsage),
       api.onFocusSearch(() => {
         setTab('sessions')
         searchRef.current?.focus()
@@ -299,6 +304,8 @@ export function App() {
           <svg viewBox="0 0 16 16" aria-hidden><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
       </header>
+
+      <UsageStrip usage={usage} now={now} onSettings={() => void api.getSettings().then(setSettings)} />
 
       {tab === 'time' ? (
         <TimeView snap={snap} onJump={jumpById} onMessage={setToast} />

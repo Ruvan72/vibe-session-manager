@@ -1,6 +1,6 @@
 // Pure list logic for the renderer: filtering, grouping and time formatting.
 
-import type { DayFile, Interval, Light, SearchHit, SessionView, TimeEntry } from '../../shared/types.ts'
+import type { DayFile, Interval, Light, SearchHit, SessionView, TimeEntry, UsageWindow } from '../../shared/types.ts'
 
 export type Range = 'today' | '3d' | 'all'
 
@@ -99,6 +99,26 @@ export function relTime(ms: number, now: number): string {
   const d = Math.round(h / 24)
   if (d < 7) return `${d}d`
   return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+/** A usage window is current until its reset time has passed; after that its percentage says nothing about the new window. */
+export function usageLive(w: UsageWindow | null, now: number): w is UsageWindow {
+  return !!w && (w.resetsAt === null || w.resetsAt > now)
+}
+
+/** Time left until a reset: "<1m", "45m", "2h 10m", "4d 3h". */
+export function formatReset(resetsAt: number, now: number): string {
+  const min = Math.ceil(Math.max(0, resetsAt - now) / 60_000)
+  if (min < 1) return '<1m'
+  if (min < 60) return `${min}m`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h}h ${String(min % 60).padStart(2, '0')}m`
+  return `${Math.floor(h / 24)}d ${h % 24}h`
+}
+
+/** How full a usage bar looks: calm below 70 %, warning from 70 %, alarm from 90 %. */
+export function usageLevel(percent: number): 'ok' | 'warn' | 'high' {
+  return percent >= 90 ? 'high' : percent >= 70 ? 'warn' : 'ok'
 }
 
 export function absTime(ms: number): string {
