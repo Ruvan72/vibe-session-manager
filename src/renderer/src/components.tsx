@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SettingsInfo } from '../../shared/api.ts'
-import type { Agent, AppSettings, DayFile, HooksStatus, LabelDef, Light, SessionView, Snapshot } from '../../shared/types.ts'
+import type { Agent, AgentUsage, AppSettings, DayFile, HooksStatus, LabelDef, Light, SessionView, Snapshot, UsageSnapshot, UsageWindow } from '../../shared/types.ts'
 import { LabelMenu } from './labels.tsx'
 import { playBlop } from './sound.ts'
 import {
@@ -12,14 +12,94 @@ import {
   dayLabel,
   dayRows,
   formatDuration,
+  formatReset,
   groupTimeRows,
   localDayStart,
+  relTime,
   shiftDay,
   sumMs,
+  usageLevel,
+  usageLive,
   type RepoOption
 } from './view.ts'
 
 const api = window.api
+
+const SOURCE_TEXT = { api: "Claude's usage service", statusline: 'the Claude Code status line cache', log: "Codex's session logs" } as const
+
+function UsageCell({ label, long, w, usage, now }: { label: string; long: string; w: UsageWindow | null; usage: AgentUsage; now: number }) {
+  if (!usageLive(w, now)) {
+    return (
+      <div className="usage-cell none" title={`${long}: no current reading. Its last window has ended.`}>
+        <span className="usage-label">{label}</span>
+        <span className="usage-bar" />
+        <span className="usage-val">–</span>
+      </div>
+    )
+  }
+  const pct = Math.round(w.percent)
+  const level = usageLevel(w.percent)
+  const reset = w.resetsAt ? formatReset(w.resetsAt, now) : null
+  const title =
+    `${long}: ${pct} % used.` +
+    (w.resetsAt ? ` Resets ${absTime(w.resetsAt)}, in ${reset}.` : '') +
+    ` Read ${relTime(usage.updatedAt, now) === 'now' ? 'just now' : relTime(usage.updatedAt, now) + ' ago'} from ${SOURCE_TEXT[usage.source]}.`
+  return (
+    <div className={`usage-cell ${level}`} title={title}>
+      <span className="usage-label">{label}</span>
+      <span
+        className="usage-bar"
+        role="progressbar"
+        aria-label={long}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+      >
+        <span style={{ width: `${Math.max(w.percent, w.percent > 0 ? 2 : 0)}%` }} />
+      </span>
+      <span className="usage-val">{pct}%</span>
+      <span className="usage-reset">{reset ?? ''}</span>
+    </div>
+  )
+}
+
+/** The 5-hour and weekly plan usage of Claude and Codex, under the title bar. */
+export function UsageStrip({ usage, now, onSettings }: { usage: UsageSnapshot; now: number; onSettings(): void }) {
+  if (!usage.enabled) return null
+  const rows: { agent: Agent; name: string; u: AgentUsage }[] = []
+  for (const [agent, name, u] of [['claude', 'Claude', usage.claude], ['codex', 'Codex', usage.codex]] as const) {
+    if (u && (usageLive(u.fiveHour, now) || usageLive(u.sevenDay, now))) rows.push({ agent, name, u })
+  }
+  const hasClaude = rows.some((r) => r.agent === 'claude')
+  if (!rows.length && usage.fromApi && !usage.claudeNote) return null
+  return (
+    <div className="usage" aria-label="Plan usage">
+      {rows.map(({ agent, name, u }) => (
+        <div key={agent} className="usage-row">
+          <span className="usage-name">
+            <AgentIcon agent={agent} />
+            {name}
+          </span>
+          <UsageCell label="5h" long="5-hour limit" w={u.fiveHour} usage={u} now={now} />
+          <UsageCell label="7d" long="Weekly limit" w={u.sevenDay} usage={u} now={now} />
+        </div>
+      ))}
+      {usage.claudeNote && (
+        <div className="usage-note">
+          <span>{usage.claudeNote}</span>
+        </div>
+      )}
+      {!hasClaude && !usage.fromApi && (
+        <div className="usage-note">
+          <span>Claude's 5-hour and weekly usage is not shown.</span>
+          <button className="link" onClick={onSettings}>
+            Turn on in Settings
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Marks a session that runs in a git worktree. */
 export function TreeIcon() {
@@ -464,6 +544,28 @@ export function SettingsPanel({ info, hooks, onChange, onClose }: { info: Settin
           <div className="actions">
             <button onClick={() => void api.openTimeFolder()}>Open time folder</button>
           </div>
+        </section>
+
+        <section>
+          <h3>Plan usage</h3>
+          <label className="check">
+            <input type="checkbox" checked={info.settings.showUsage} onChange={(e) => void save({ showUsage: e.target.checked })} />
+            Show the 5-hour and weekly usage under the title bar
+          </label>
+          <label className="check indent">
+            <input
+              type="checkbox"
+              disabled={!info.settings.showUsage}
+              checked={info.settings.usageFromApi}
+              onChange={(e) => void save({ usageFromApi: e.target.checked })}
+            />
+            Read live Claude usage from Anthropic
+          </label>
+          <p className="muted">
+            Codex usage comes from its session logs. Live Claude usage asks api.anthropic.com every few minutes, using the sign-in token Claude Code keeps in{' '}
+            <span className="mono">~/.claude/.credentials.json</span>. The token goes nowhere else, is not saved by this app and is never refreshed by it. The service is not
+            documented by Anthropic and may change.
+          </p>
         </section>
 
         <section>

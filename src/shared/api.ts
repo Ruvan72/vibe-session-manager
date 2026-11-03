@@ -1,6 +1,6 @@
 // The API the preload script exposes to the renderer as window.api.
 
-import type { AppSettings, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot } from './types.ts'
+import type { AppSettings, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot, UsageSnapshot } from './types.ts'
 
 export interface SettingsInfo {
   settings: AppSettings
@@ -28,6 +28,11 @@ export interface DebugActions {
 export interface Api {
   getSnapshot(): Promise<Snapshot>
   onSnapshot(cb: (s: Snapshot) => void): () => void
+  /** Plan usage (5-hour and weekly limits) of Claude and Codex. */
+  getUsage(): Promise<UsageSnapshot>
+  onUsage(cb: (u: UsageSnapshot) => void): () => void
+  /** Reads the usage sources again now. */
+  refreshUsage(): Promise<void>
   search(query: string): Promise<SearchHit[]>
   jump(id: string): Promise<JumpResult>
   markSeen(id: string): Promise<void>

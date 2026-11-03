@@ -281,6 +281,109 @@ svg {
   white-space: nowrap;
 }
 
+/* ---------- plan usage ---------- */
+
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sub);
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.usage-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.usage-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.usage-name .agent-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.usage-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.usage-label {
+  width: 16px;
+  color: var(--text-faint);
+}
+
+.usage-bar {
+  position: relative;
+  flex: 1;
+  min-width: 12px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.usage-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.usage-cell.warn .usage-bar > span {
+  background: var(--yellow);
+}
+
+.usage-cell.high .usage-bar > span {
+  background: var(--red);
+}
+
+.usage-cell.none {
+  color: var(--text-faint);
+}
+
+.usage-val {
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.usage-cell.none .usage-val {
+  color: var(--text-faint);
+}
+
+.usage-reset {
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.usage-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+}
+
+.usage-note span {
+  flex: 1;
+}
+
 /* ---------- list ---------- */
 
 .list {

@@ -10,6 +10,9 @@ function listen<T>(channel: string, cb: (value: T) => void): () => void {
 const api: Api = {
   getSnapshot: () => ipcRenderer.invoke('get-snapshot'),
   onSnapshot: (cb) => listen('snapshot', cb),
+  getUsage: () => ipcRenderer.invoke('get-usage'),
+  onUsage: (cb) => listen('usage', cb),
+  refreshUsage: () => ipcRenderer.invoke('refresh-usage'),
   search: (q) => ipcRenderer.invoke('search', q),
   jump: (id) => ipcRenderer.invoke('jump', id),
   markSeen: (id) => ipcRenderer.invoke('mark-seen', id),

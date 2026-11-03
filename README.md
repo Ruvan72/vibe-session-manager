@@ -23,6 +23,7 @@ When you run several AI coding agents at once, one per VS Code window or git wor
 - **Tray badge, notifications and a "blop"** when a session needs you, but not when you are already looking at its window.
 - **Search** across titles, repos, branches and the conversations themselves.
 - **Labels, rename and hide** to keep the list tidy.
+- **Plan usage**: how much of the 5-hour and weekly limits Claude and Codex have used, and when they reset.
 - **Time tracking**: active time per day, repo and session, with CSV export.
 
 <p align="center">

@@ -100,6 +100,16 @@ What is different from Claude Code sessions:
 
 Chats in the Claude app's Chat tab are kept on Anthropic's servers and are not on your disk, so they are not listed.
 
+## Plan usage
+
+Under the title bar, one row per agent shows how much of its **5-hour** and **weekly** limit is used, as a bar with the percentage and the time to the next reset. The bar is blue below 70 %, amber from 70 % and red from 90 %. Hover a bar for the exact reset time and where the number came from. A dash means that window has ended and nothing newer was read. Claude Code and Cowork share your Claude plan, so one Claude row covers both.
+
+- **Codex** is read from its session logs (`~/.codex/sessions`), which carry the limits on every turn. It is as fresh as your last Codex turn.
+- **Claude** is read live from Anthropic, but only after you turn on **Read live Claude usage from Anthropic** in Settings. The app then asks `api.anthropic.com` every five minutes, using the sign-in token Claude Code keeps in `~/.claude/.credentials.json`. The token is sent only there, is not saved by the app and is never refreshed by it, so Claude Code stays signed in. If the token has expired, use Claude Code once and it refreshes. The service is not documented by Anthropic and may change; if it answers in a format this version does not know, the row says so instead of showing wrong numbers.
+- **Without the opt-in** Claude's row only appears if a Claude Code status line helper writes `~/.claude/vscode-claude-status-cache.json`. Otherwise a one-line note offers to turn live usage on.
+
+**Show the 5-hour and weekly usage** in Settings hides the strip and stops all reading. Accounts without a Claude subscription (API key only) have no such limits.
+
 ## Time tracking
 
 The **Time** tab (`Ctrl+T`) shows active time per day: a total, then each repo, then each session with its periods. A pause longer than the idle gap (90 min by default, see Settings) ends a period and is not counted. Sessions that run in parallel both count, so a day's total can be longer than the day. **Copy day as CSV** puts the day on the clipboard, separated by semicolons.

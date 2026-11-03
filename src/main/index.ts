@@ -31,6 +31,7 @@ import {
   runEditorCli,
   saveSettings,
   SessionStore,
+  UsageMonitor,
   uninstallHooks,
   upgradeLegacyHooks
 } from '../core/index.ts'
@@ -55,6 +56,7 @@ if (!process.env.VSM_DATA_DIR) adoptLegacyDataDir(LEGACY_DATA_DIR, dataDir)
 
 let settings: AppSettings = loadSettings(dataDir)
 let store: SessionStore
+let usage: UsageMonitor
 let tray: Tray | null = null
 let win: BrowserWindow | null = null
 let shortcutErrors: string[] = []
@@ -78,6 +80,7 @@ function start(): void {
     setWorkingAnimation(false)
     globalShortcut.unregisterAll()
     store?.stop()
+    usage?.stop()
   })
   registerIpc()
 
@@ -93,6 +96,8 @@ function start(): void {
       idleGapMs: settings.idleGapMinutes * 60_000,
       isAlive: process.env.VSM_ASSUME_ALIVE ? () => true : undefined
     })
+    usage = new UsageMonitor({ claudeDir, codexDir, fromApi: settings.usageFromApi, enabled: settings.showUsage })
+    usage.on('change', (u) => win?.webContents.send('usage', u))
     store.on('change', onSnapshot)
     store.on('waiting', (s) => notify(s, s.reason || 'Waiting for you'))
     store.on('finished', (s) => {
@@ -108,6 +113,8 @@ function start(): void {
       if (!process.argv.includes(HIDDEN_ARG)) win?.once('ready-to-show', () => showWindow({ focusSearch: true }))
     }
     await store.start()
+    if (screenshotPath) await usage.refresh()
+    else usage.start()
     onSnapshot(store.snapshot())
     if (screenshotPath) await takeScreenshot(screenshotPath)
   })
@@ -219,6 +226,7 @@ function placeWindow(nearCursor: boolean): void {
 
 function showWindow(opts: { focusSearch?: boolean; nearCursor?: boolean } = {}): void {
   if (!win) return
+  void usage?.refresh()
   if (!placed) placeWindow(!!opts.nearCursor)
   if (win.isMinimized()) win.restore()
   win.show()
@@ -529,6 +537,8 @@ function settingsInfo(): SettingsInfo {
 
 function registerIpc(): void {
   ipcMain.handle('get-snapshot', () => store.snapshot())
+  ipcMain.handle('get-usage', () => usage.snapshot())
+  ipcMain.handle('refresh-usage', () => usage.refresh())
   ipcMain.handle('search', (_e, q: string) => store.search(String(q)))
   ipcMain.handle('jump', (_e, id: string) => jump(id))
   ipcMain.handle('mark-seen', (_e, id: string) => store.markSeen(id))
@@ -548,6 +558,7 @@ function registerIpc(): void {
     settings = { ...settings, ...rest, shortcuts: { ...settings.shortcuts, ...(rest.shortcuts ?? {}) } }
     saveSettings(dataDir, settings)
     store.setIdleGap(settings.idleGapMinutes * 60_000)
+    usage.configure({ enabled: settings.showUsage, fromApi: settings.usageFromApi })
     if (!screenshotPath) registerShortcuts()
     return settingsInfo()
   })
