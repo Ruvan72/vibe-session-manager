@@ -309,6 +309,16 @@ svg {
   color: var(--text);
 }
 
+.usage-sub .usage-name {
+  display: block;
+  padding-left: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
 .usage-name .agent-icon {
   width: 12px;
   height: 12px;

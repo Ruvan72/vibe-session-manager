@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SettingsInfo } from '../../shared/api.ts'
 import type { Agent, AgentUsage, AppSettings, ArchiveStatus, DayFile, HooksStatus, LabelDef, Light, SessionView, Snapshot, UsageSnapshot, UsageWindow } from '../../shared/types.ts'
 import { LabelMenu } from './labels.tsx'
@@ -69,21 +69,35 @@ export function UsageStrip({ usage, now, onSettings }: { usage: UsageSnapshot; n
   if (!usage.enabled) return null
   const rows: { agent: Agent; name: string; u: AgentUsage }[] = []
   for (const [agent, name, u] of [['claude', 'Claude', usage.claude], ['codex', 'Codex', usage.codex]] as const) {
-    if (u && (usageLive(u.fiveHour, now) || usageLive(u.sevenDay, now))) rows.push({ agent, name, u })
+    if (u && (usageLive(u.fiveHour, now) || usageLive(u.sevenDay, now) || u.scoped?.some((s) => usageLive(s, now)))) rows.push({ agent, name, u })
   }
   const hasClaude = rows.some((r) => r.agent === 'claude')
   if (!rows.length && usage.fromApi && !usage.claudeNote) return null
   return (
     <div className="usage" aria-label="Plan usage">
       {rows.map(({ agent, name, u }) => (
-        <div key={agent} className="usage-row">
-          <span className="usage-name">
-            <AgentIcon agent={agent} />
-            {name}
-          </span>
-          <UsageCell label="5h" long="5-hour limit" w={u.fiveHour} usage={u} now={now} />
-          <UsageCell label="7d" long="Weekly limit" w={u.sevenDay} usage={u} now={now} />
-        </div>
+        <Fragment key={agent}>
+          <div className="usage-row">
+            <span className="usage-name">
+              <AgentIcon agent={agent} />
+              {name}
+            </span>
+            <UsageCell label="5h" long="5-hour limit" w={u.fiveHour} usage={u} now={now} />
+            <UsageCell label="7d" long="Weekly limit" w={u.sevenDay} usage={u} now={now} />
+          </div>
+          {/* A single-model weekly limit sits under the weekly column it is a share of. */}
+          {u.scoped
+            ?.filter((s) => usageLive(s, now))
+            .map((s) => (
+              <div key={s.name} className="usage-row usage-sub">
+                <span className="usage-name" title={`${name}'s weekly ${s.name} limit`}>
+                  {s.name}
+                </span>
+                <span aria-hidden="true" />
+                <UsageCell label="7d" long={`Weekly ${s.name} limit`} w={s} usage={u} now={now} />
+              </div>
+            ))}
+        </Fragment>
       ))}
       {usage.claudeNote && (
         <div className="usage-note">

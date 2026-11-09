@@ -188,6 +188,13 @@ export interface AgentUsage {
   updatedAt: number
   fiveHour: UsageWindow | null
   sevenDay: UsageWindow | null
+  /** Weekly limits that only count one model (Claude's Fable limit), when the API reports any. */
+  scoped?: ScopedUsageWindow[]
+}
+
+export interface ScopedUsageWindow extends UsageWindow {
+  /** What the limit counts, as the API names it ("Fable"). */
+  name: string
 }
 
 export interface UsageSnapshot {

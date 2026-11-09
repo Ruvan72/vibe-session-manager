@@ -33,6 +33,31 @@ describe('Claude usage parsing', () => {
     })
   })
 
+  it('reads single-model weekly limits from the limits list', () => {
+    const u = parseOAuthUsage(
+      {
+        five_hour: { utilization: 6, resets_at: '2026-11-09T12:29:59.670522+00:00' },
+        seven_day: { utilization: 39, resets_at: '2026-11-09T17:59:59.670541+00:00' },
+        limits: [
+          { kind: 'session', group: 'session', percent: 6, resets_at: '2026-11-09T12:29:59.670522+00:00', scope: null },
+          { kind: 'weekly_all', group: 'weekly', percent: 39, resets_at: '2026-11-09T17:59:59.670541+00:00', scope: null },
+          { kind: 'weekly_scoped', group: 'weekly', percent: 40, resets_at: '2026-11-09T17:59:59.670669+00:00', scope: { model: { id: null, display_name: 'Fable' }, surface: null } },
+          { kind: 'weekly_scoped', percent: 'lots', scope: { model: { display_name: 'Broken' } } },
+          { kind: 'weekly_scoped', percent: 5, scope: null },
+          { kind: 'weekly_scoped', percent: 7, scope: { model: null, surface: { display_name: 'Claude Code' } } },
+          { kind: 'weekly_scoped', percent: 1, scope: { model: { display_name: 'Fable' } } }
+        ]
+      },
+      NOW
+    )
+    expect(u?.sevenDay?.percent).toBe(39)
+    expect(u?.scoped).toEqual([{ name: 'Fable', percent: 40, resetsAt: Date.parse('2026-11-09T17:59:59.670Z') }])
+  })
+
+  it('leaves scoped limits out when the response has none', () => {
+    expect(parseOAuthUsage({ five_hour: null, seven_day: null, limits: 'nope' }, NOW)).not.toHaveProperty('scoped')
+  })
+
   it('treats a null window as nothing used, and clamps silly values', () => {
     const u = parseOAuthUsage({ five_hour: null, seven_day: { utilization: 140, resets_at: null } }, NOW)
     expect(u?.fiveHour).toEqual({ percent: 0, resetsAt: null })
@@ -277,6 +302,22 @@ describe('UsageMonitor', () => {
     monitor = new UsageMonitor({ ...dirs, now: () => NOW })
     await monitor.refresh()
     expect(monitor.snapshot().claude).toMatchObject({ source: 'statusline', fiveHour: { percent: 50 } })
+  })
+
+  it("keeps the API's single-model limits when the status line cache is newer", async () => {
+    const dirs = setup()
+    writeFileSync(path.join(dirs.claudeDir, 'vscode-claude-status-cache.json'), JSON.stringify({ updatedAt: '2026-11-03T12:30:00Z', usageData: { utilization5h: 0.5, utilization7d: 0.1, reset5hAt: 1793459713, reset7dAt: 1793951020 } }))
+    const fetchFn = vi.fn(async () => ({
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({
+        five_hour: { utilization: 10, resets_at: '2026-11-03T14:00:00Z' },
+        limits: [{ kind: 'weekly_scoped', percent: 40, resets_at: '2026-11-08T09:00:00Z', scope: { model: { display_name: 'Fable' } } }]
+      })
+    }))
+    monitor = new UsageMonitor({ ...dirs, fetch: fetchFn, now: () => NOW, fromApi: true })
+    await monitor.refresh()
+    expect(monitor.snapshot().claude).toMatchObject({ source: 'statusline', fiveHour: { percent: 50 }, scoped: [{ name: 'Fable', percent: 40 }] })
   })
 
   it('reads nothing when switched off', async () => {

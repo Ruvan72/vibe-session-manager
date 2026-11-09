@@ -3,6 +3,8 @@
 // Claude: Claude Code keeps its sign-in token in ~/.claude/.credentials.json. With the user's opt-in the token asks
 //   GET https://api.anthropic.com/api/oauth/usage
 // (undocumented, the endpoint Claude Code's own /usage view reads) for {five_hour, seven_day}: {utilization, resets_at}.
+// Weekly limits for a single model (Fable) only appear in its `limits` list: {kind: 'weekly_scoped', percent, resets_at,
+// scope: {model: {display_name}}}.
 // Without opt-in, only a local cache file is read, if a status line helper writes one (~/.claude/vscode-claude-status-cache.json).
 // The token is only read, never refreshed (refreshing could sign Claude Code out), never stored and never logged.
 //
@@ -13,7 +15,7 @@ import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync } from 'node:fs'
 import { open, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import type { AgentUsage, UsageSnapshot, UsageWindow } from '../shared/types.ts'
+import type { AgentUsage, ScopedUsageWindow, UsageSnapshot, UsageWindow } from '../shared/types.ts'
 
 export const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 const STATUS_CACHE_FILE = 'vscode-claude-status-cache.json'
@@ -44,9 +46,25 @@ function apiWindow(v: unknown): UsageWindow | null {
   if (v === null) return { percent: 0, resetsAt: null }
   if (!v || typeof v !== 'object') return null
   const o = v as Record<string, unknown>
-  const used = o.utilization ?? o.used_percentage
+  const used = o.utilization ?? o.used_percentage ?? o.percent
   if (typeof used !== 'number' || !Number.isFinite(used)) return null
   return { percent: clampPct(used), resetsAt: toMs(o.resets_at ?? o.resetsAt) }
+}
+
+/** The single-model weekly limits of the `limits` list. Entries it does not understand are skipped. */
+function scopedWindows(limits: unknown): ScopedUsageWindow[] {
+  if (!Array.isArray(limits)) return []
+  const out: ScopedUsageWindow[] = []
+  for (const l of limits) {
+    if (l?.kind !== 'weekly_scoped') continue
+    // Only model limits: a limit scoped to a surface would not be a share of one model's use.
+    const name = l.scope?.model?.display_name
+    const w = apiWindow(l)
+    if (typeof name !== 'string' || !name || !w) continue
+    if (out.some((o) => o.name === name)) continue
+    out.push({ name, ...w })
+  }
+  return out
 }
 
 /** The /api/oauth/usage response, or null if it has neither window (the format changed). */
@@ -56,7 +74,8 @@ export function parseOAuthUsage(json: unknown, now: number): AgentUsage | null {
   const fiveHour = apiWindow(o.five_hour)
   const sevenDay = apiWindow(o.seven_day)
   if (!fiveHour && !sevenDay) return null
-  return { source: 'api', updatedAt: now, fiveHour, sevenDay }
+  const scoped = scopedWindows(o.limits)
+  return { source: 'api', updatedAt: now, fiveHour, sevenDay, ...(scoped.length ? { scoped } : {}) }
 }
 
 /** The cache file a status line helper writes from Claude Code's status line payload. */
@@ -330,7 +349,10 @@ export class UsageMonitor extends EventEmitter {
       const file = path.join(this.opts.claudeDir, STATUS_CACHE_FILE)
       if (existsSync(file)) cache = parseStatusCache(JSON.parse(readFileSync(file, 'utf8')))
     } catch {}
-    const candidates = [this.fromApi ? this.lastApi : null, cache].filter((u): u is AgentUsage => !!u)
-    this.claude = candidates.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null
+    const api = this.fromApi ? this.lastApi : null
+    const candidates = [api, cache].filter((u): u is AgentUsage => !!u)
+    const newest = candidates.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null
+    // The cache has no single-model limits; keep the API's while the cache is the newer reading.
+    this.claude = newest && newest !== api && api?.scoped ? { ...newest, scoped: api.scoped } : newest
   }
 }
