@@ -36,7 +36,7 @@ npm run dev
 
 ## Layout
 
-- `src/core`: plain TypeScript/Node with no Electron dependency. The transcript, live-status and hook-event readers, the Codex reader (`codex.ts`), the session model, search, time tracking, the hook installer and the launcher.
+- `src/core`: plain TypeScript/Node with no Electron dependency. The transcript, live-status and hook-event readers, the Codex reader (`codex.ts`), the session model, search, time tracking, the conversation archive (`archive.ts`), the hook installer and the launcher.
 - `src/main`: Electron main process (tray, window, shortcuts, notifications, IPC).
 - `src/preload`, `src/renderer`: the list UI (React).
 - `src/shared`: types shared by all of the above.
@@ -63,7 +63,7 @@ Then start the app with these environment variables:
 | `VSM_ASSUME_ALIVE=1` | Treat every live-status file as a running process |
 | `VSM_THEME=dark` or `light` | Force a theme |
 | `VSM_SCREENSHOT=<file.png>` | Render the window once, save it and quit |
-| `VSM_DEBUG='{"query":"x","expandFirst":true,"labelMenu":true,"grouped":true,"repoMenu":true,"rename":true,"settings":true}'` | Set up the view before a screenshot |
+| `VSM_DEBUG='{"query":"x","expandFirst":true,"labelMenu":true,"grouped":true,"repoMenu":true,"rename":true,"settings":true,"tab":"archive","archiveQuery":"x","archiveOpenFirst":true}'` | Set up the view before a screenshot |
 
 The README screenshots are made this way, from `npm run build` and `npx electron . --force-device-scale-factor=2`.
 

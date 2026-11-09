@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- **Archive** tab and an opt-in setting to keep a copy of every Claude Code, Cowork and Codex conversation, so it survives closed windows, removed worktrees and Claude Code's cleanup. Search all of it, read it as Markdown with the matches highlighted, and open a session from the results. When its folder or transcript is gone, the app asks and brings them back first. See [docs/USAGE.md](docs/USAGE.md#archive).
+
 ## [0.1.2] - 2026-11-03
 
 ### Added

@@ -81,10 +81,10 @@ const STRIP_BLOCKS = [
   'pasted_content'
 ]
 const STRIP_RE = new RegExp(`<(${STRIP_BLOCKS.join('|')})\\b[^>]*>[\\s\\S]*?</\\1>`, 'g')
-const PASTED_RE = /<pasted_content\b[^>]*>([\s\S]*?)<\/pasted_content>/g
+export const PASTED_RE = /<pasted_content\b[^>]*>([\s\S]*?)<\/pasted_content>/g
 
 /** The text blocks of a message, joined. */
-function messageText(content: unknown): string {
+export function messageText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   return content
@@ -239,6 +239,10 @@ export class TranscriptReader {
 
   get mtimeMs(): number {
     return this.tail.mtimeMs
+  }
+
+  get sourceFiles(): string[] {
+    return [this.filePath]
   }
 
   /** True if the reader can go on with these files; false if it must start over. */

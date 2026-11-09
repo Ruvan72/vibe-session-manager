@@ -22,12 +22,15 @@ import {
 import {
   adoptLegacyDataDir,
   findCoworkDir,
+  folderPlan,
   HOOK_EVENTS,
   installHooks,
   jumpToSession,
   loadSettings,
   editorTarget,
+  openNeeds,
   readEditorState,
+  resumeCommand,
   runEditorCli,
   saveSettings,
   SessionStore,
@@ -94,11 +97,13 @@ function start(): void {
       coworkDir,
       dataDir,
       idleGapMs: settings.idleGapMinutes * 60_000,
-      isAlive: process.env.VSM_ASSUME_ALIVE ? () => true : undefined
+      isAlive: process.env.VSM_ASSUME_ALIVE ? () => true : undefined,
+      archive: settings.archiveConversations
     })
     usage = new UsageMonitor({ claudeDir, codexDir, fromApi: settings.usageFromApi, enabled: settings.showUsage })
     usage.on('change', (u) => win?.webContents.send('usage', u))
     store.on('change', onSnapshot)
+    store.on('archive', (s) => win?.webContents.send('archive-status', s))
     store.on('waiting', (s) => notify(s, s.reason || 'Waiting for you'))
     store.on('finished', (s) => {
       if (settings.notifyOnYellow) notify(s, 'Finished a turn')
@@ -421,6 +426,53 @@ function editorStorageFile(): string {
   return path.join(base, product, 'User', 'globalStorage', 'storage.json')
 }
 
+/** Opens a session from the archive. When its folder or transcript is gone, asks first and brings them back. */
+async function openArchived(id: string): Promise<JumpResult> {
+  const found = await store.archive.infoOf(id)
+  if (!found) return { ok: false, message: 'This session is not in the archive.' }
+  const { info, open } = found
+  const needs = openNeeds(info)
+  let note: string | null = null
+  if (open.needsRestore) {
+    const lines: string[] = []
+    if (needs.folder && !open.folderExists) {
+      const plan = folderPlan(info)
+      if (plan.kind === 'worktree') {
+        lines.push(
+          `The worktree folder is gone. It will be created again with git, from ${info.repoPath}${plan.branch ? ` on branch ${plan.branch}` : ''}:\n${info.homeDir}`,
+          'The files will be what is committed now. Uncommitted work from the old worktree does not come back.'
+        )
+      } else {
+        lines.push(`The folder is gone. An empty folder will be created, so the session has somewhere to run:\n${info.homeDir}`)
+      }
+    }
+    if (needs.transcript && !open.transcriptExists) lines.push(`The transcript was deleted. It will be copied back from the archive to:\n${found.transcriptPath}`)
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Restore and open', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Restore session',
+      message: `Restore "${info.title}" and open it?`,
+      detail: lines.join('\n\n')
+    })
+    if (response !== 0) return { ok: true }
+    try {
+      note = await store.restoreArchived(id)
+    } catch (e: any) {
+      return { ok: false, message: `Could not restore the session: ${e?.message ?? e}` }
+    }
+  }
+  if (store.get(id)) {
+    const res = await jump(id)
+    return note ? { ...res, message: [note, res.message].filter(Boolean).join(' ') } : res
+  }
+  // Sessions the list leaves out: Cowork sessions archived in the Claude app, Codex subagent threads.
+  const command = resumeCommand(info)
+  clipboard.writeText(command ?? info.title)
+  return { ok: false, message: command ? `Resume command copied: ${command}` : `Cowork sessions open in the Claude app: look for "${info.title}" there. Title copied.` }
+}
+
 async function jumpUrgent(): Promise<void> {
   const queue = store.urgent()
   if (!queue.length) {
@@ -558,6 +610,7 @@ function registerIpc(): void {
     settings = { ...settings, ...rest, shortcuts: { ...settings.shortcuts, ...(rest.shortcuts ?? {}) } }
     saveSettings(dataDir, settings)
     store.setIdleGap(settings.idleGapMinutes * 60_000)
+    store.setArchiving(settings.archiveConversations)
     usage.configure({ enabled: settings.showUsage, fromApi: settings.usageFromApi })
     if (!screenshotPath) registerShortcuts()
     return settingsInfo()
@@ -575,5 +628,21 @@ function registerIpc(): void {
   ipcMain.handle('open-time-folder', async () => {
     store.timelog.flush()
     await shell.openPath(store.timelog.dir)
+  })
+  ipcMain.handle('archive-status', () => store.archiveStatus())
+  ipcMain.handle('archive-search', (_e, q: string) => store.archive.search(String(q)))
+  ipcMain.handle('archive-read', (_e, id: string) => store.archive.read(String(id)))
+  ipcMain.handle('archive-open', (_e, id: string) => openArchived(String(id)))
+  ipcMain.handle('archive-reveal', (_e, id: string) => {
+    const file = store.archive.conversationFile(String(id))
+    if (file) shell.showItemInFolder(file)
+  })
+  ipcMain.handle('archive-folder', async () => {
+    mkdirSync(store.archive.dir, { recursive: true })
+    await shell.openPath(store.archive.dir)
+  })
+  // A conversation can hold any link; only web links go to the browser.
+  ipcMain.handle('open-link', async (_e, url: string) => {
+    if (/^https?:\/\//i.test(String(url))) await shell.openExternal(String(url))
   })
 }

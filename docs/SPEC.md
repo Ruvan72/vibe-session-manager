@@ -19,7 +19,7 @@ The same applies to OpenAI Codex (the Codex app, Codex's VS Code extension and t
 ## 2. Scope
 
 - **Local sessions only.** Sessions running in the cloud on claude.ai/code or as Codex cloud tasks are not on disk and are not included.
-- **The app only reads.** It never changes Claude Code's or Codex's files. There are two exceptions: a one-time setup of hooks in `~/.claude/settings.json`, which the user must approve, and renaming a Claude Code session (6), which appends one line to the session's transcript, exactly like Claude Code's own `/rename`.
+- **The app only reads.** It never changes Claude Code's or Codex's files. There are three exceptions: a one-time setup of hooks in `~/.claude/settings.json`, which the user must approve, renaming a Claude Code session (6), which appends one line to the session's transcript, exactly like Claude Code's own `/rename`, and restoring an archived session (3.9), which the user must approve and which only adds what is missing.
 - **No transcripts leave the machine.** See section 7.
 
 ## 3. What it must do
@@ -105,7 +105,7 @@ For other editors and for Codex, see 5.4.
 - Free-text search in titles, the whole conversation (the user's prompts, Claude's and Codex's answers and pasted text, but not tool calls, their output or subagents), repo, worktree, branch and folder names, and agent (`claude` / `codex`) across all sessions. Summaries are included in phase 2.
 - The list is filtered as you type. Words are matched regardless of order and case, and matches are highlighted.
 - Search ignores the time filter, so older sessions can also be found.
-- The index is built in the background at startup and is kept in memory only. Each prompt, each answer and each piece of pasted text is stored with at most 20,000 characters. The conversation text is not written to disk by the app (see 7).
+- The index is built in the background at startup and is kept in memory only. Each prompt, each answer and each piece of pasted text is stored with at most 20,000 characters. The conversation text is not written to disk by this index (see 7); the archive (3.9) is separate and opt-in.
 
 ### 3.6 Web view (phase 3, optional)
 
@@ -132,6 +132,16 @@ A session can have one or more **labels**, e.g. that the work is waiting for a m
 - Labels do not affect the traffic light, the tray badge or the notifications, since they can stay on for days.
 - Stored in `labels.json` in the app's data folder: the labels' name and icon, and which labels each session has.
 - Not built: "Pending merge" being removed automatically when the branch has been merged (requires `git branch --merged` and knowledge of the main branch per repo).
+
+### 3.9 Conversation archive (decided 2026-11-06)
+
+Closing a window loses the way back to a session started in a worktree, and Claude Code deletes old transcripts. The archive keeps a copy of every conversation.
+
+- **Opt-in**, off by default. Turning it off stops copying and keeps what is there.
+- **What is copied:** every session with activity, also those the list leaves out, such as Cowork sessions archived in the Claude app and Codex subagent threads.
+- **Search** runs over the full text of the Markdown copies, unclipped, plus title, repo, worktree, branch, folder, id and agent. It loads the text into memory the first time the Archive tab is opened.
+- **Reader:** the conversation as Markdown with the matches highlighted, and next and previous match. A conversation can hold anything, so it is parsed to tokens and rendered as React elements: no raw HTML, no remote images, and only http(s) links can be followed, in the browser.
+- **Open** is offered on every result. What is on disk is checked each time a session is listed: the session's folder and its transcript. If something needed is gone, the app asks first, brings it back (5.7) and then opens the session as usual.
 
 ## 4. Architecture
 
@@ -304,6 +314,20 @@ Older Codex versions write `event_msg` `user_message` / `agent_message`; these a
 
 **What cannot be seen:** when Codex is waiting for an approval, nothing is written, so the session shows as green. A new chat only appears once the first message has been sent; before that, Codex has not stored anything. `state_5.sqlite` contains the same as the files above, but is not used: it requires an SQLite driver, and the number in the name changes with the schema.
 
+### 5.7 Archive — `~/.vibe-session-manager/archive/sessions/<sessionId>/` (the app's own files)
+
+| File | Content |
+|---|---|
+| `conversation.md` | A header, the line `<!-- conversation -->`, then a `## You · <time>` or `## Claude · <time>` heading per turn. The header is rewritten when the title changes; the rest only grows |
+| `raw/<file>.gz` | The session's transcript files. `raw/extra/<path>.gz` holds what is in the transcript's `<sessionId>/` folder: subagents and saved tool results |
+| `meta.json` | Session facts, and per file its source path, how far it has been read and the length of its copy |
+
+- Transcripts only grow, so a pass (once a minute) reads from the saved offset up to the last complete line and appends one gzip member to the copy. Concatenated members are a valid gzip file. Files that are not `.jsonl` are copied whole when their size or time changes.
+- `meta.json` is written after the copies. If a pass is interrupted, the next one cuts the copies back to the lengths in `meta.json` and repeats the work.
+- If a source is shorter than the saved offset it was replaced: the old copy is kept under a new name, and a new one starts.
+- Sources that disappear are never removed from the archive.
+- **Restoring:** a Claude worktree is recognised from its path, a linked worktree from what was recorded while its folder existed. `git worktree prune`, then `git worktree add` on the recorded branch. If the branch is gone it is created from the repo's HEAD, and if it is checked out elsewhere the worktree gets its commit detached. Without a repo the folder comes back empty. Transcript files that are missing are unpacked to their source paths; files that exist are never overwritten.
+
 ## 6. UI
 
 - **Tray icon** with a badge (number needing attention). Clicking it opens a small window with the list.
@@ -323,6 +347,7 @@ Older Codex versions write `event_msg` `user_message` / `agent_message`; these a
 - Summaries (3.4) send an excerpt to Anthropic's API. This must be opt-in and possible to turn off per project.
 - The web view (3.6) only synchronizes metadata: title, summary (if enabled), repo/branch name, timestamps and status. Login is required.
 - The hook script only writes session ID, event name, time and the notification text. It writes no prompts.
+- The archive (3.9) stores conversations and everything the agents read, unencrypted, in the app's data folder. It is opt-in, and the setting says so.
 
 ## 8. Open questions and risks
 
