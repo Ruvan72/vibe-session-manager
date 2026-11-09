@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { SettingsInfo } from '../../shared/api.ts'
+import type { DebugActions, SettingsInfo } from '../../shared/api.ts'
 import type { LabelDef, Light, SearchHit, SessionView, Snapshot, UsageSnapshot } from '../../shared/types.ts'
+import { ArchiveView } from './archive.tsx'
 import { AgentIcon, Detail, LightIcon, RepoFilter, SettingsPanel, TimeView, TitleEditor, UsageStrip, Where } from './components.tsx'
 import { LabelGlyph, LabelList } from './labels.tsx'
 import { playBlop } from './sound.ts'
@@ -11,7 +12,12 @@ const EMPTY: Snapshot = { sessions: [], hooks: 'none', scanning: true, counts: {
 
 const NO_USAGE: UsageSnapshot = { enabled: false, fromApi: false, claude: null, codex: null, claudeNote: null }
 
-type Tab = 'sessions' | 'time'
+type Tab = 'sessions' | 'time' | 'archive'
+const TABS: { id: Tab; name: string }[] = [
+  { id: 'sessions', name: 'Sessions' },
+  { id: 'time', name: 'Time' },
+  { id: 'archive', name: 'Archive' }
+]
 
 export function App() {
   const [snap, setSnap] = useState<Snapshot>(EMPTY)
@@ -34,6 +40,7 @@ export function App() {
   const [repoMenuDebug, setRepoMenuDebug] = useState(false)
   // Debug helper (VSM_DEBUG): open the rename field on the first Claude Code row once there is one.
   const [renameFirst, setRenameFirst] = useState(false)
+  const [archiveDebug, setArchiveDebug] = useState<DebugActions | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -58,6 +65,7 @@ export function App() {
         if (d.settings) void api.getSettings().then(setSettings)
         if (d.expandFirst) setExpandFirst(d.labelMenu ? 'labels' : 'row')
         if (d.tab) setTab(d.tab)
+        setArchiveDebug(d)
       })
     ]
     const timer = setInterval(() => setNow(Date.now()), 30_000)
@@ -157,6 +165,18 @@ export function App() {
       if (e.key === 'Escape') setSettings(null)
       return
     }
+    if (mod && e.key.toLowerCase() === 't') {
+      e.preventDefault()
+      setTab((t) => TABS[(TABS.findIndex((x) => x.id === t) + 1) % TABS.length].id)
+      return
+    }
+    if (mod && e.key === ',') {
+      e.preventDefault()
+      void api.getSettings().then(setSettings)
+      return
+    }
+    // The archive handles its own keys.
+    if (tab === 'archive') return
     if (mod && e.key.toLowerCase() === 'f') {
       e.preventDefault()
       setTab('sessions')
@@ -165,11 +185,6 @@ export function App() {
         searchRef.current?.focus()
         searchRef.current?.select()
       })
-      return
-    }
-    if (mod && e.key.toLowerCase() === 't') {
-      e.preventDefault()
-      setTab((t) => (t === 'sessions' ? 'time' : 'sessions'))
       return
     }
     if (tab === 'time') {
@@ -209,9 +224,6 @@ export function App() {
     } else if (e.key === 'F2' && selected?.agent === 'claude') {
       e.preventDefault()
       setRenameFor(selected.id)
-    } else if (mod && e.key === ',') {
-      e.preventDefault()
-      void api.getSettings().then(setSettings)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       if (query) setQuery('')
@@ -272,9 +284,9 @@ export function App() {
         <span className="app-name">Vibe Session Manager</span>
         <span className="spacer" />
         <div className="tabs" role="tablist">
-          {(['sessions', 'time'] as Tab[]).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} title="Switch view (Ctrl+T)" onClick={() => setTab(t)}>
-              {t === 'sessions' ? 'Sessions' : 'Time'}
+          {TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} title="Switch view (Ctrl+T)" onClick={() => setTab(t.id)}>
+              {t.name}
             </button>
           ))}
         </div>
@@ -307,7 +319,10 @@ export function App() {
 
       <UsageStrip usage={usage} now={now} onSettings={() => void api.getSettings().then(setSettings)} />
 
-      {tab === 'time' ? (
+      {/* Stays mounted, so the search and the place in a conversation are there when coming back. */}
+      <ArchiveView active={tab === 'archive'} paused={!!settings} debug={archiveDebug} now={now} onMessage={setToast} />
+
+      {tab === 'archive' ? null : tab === 'time' ? (
         <TimeView snap={snap} onJump={jumpById} onMessage={setToast} />
       ) : (
       <>
@@ -421,7 +436,7 @@ export function App() {
 
       <footer className="statusbar">
         <span>
-          {tab === 'sessions' ? `${ordered.length} of ${snap.sessions.length}` : 'Active time; idle gaps not counted'}
+          {tab === 'sessions' ? `${ordered.length} of ${snap.sessions.length}` : tab === 'time' ? 'Active time; idle gaps not counted' : ''}
           {snap.scanning ? ' · reading…' : ''}
         </span>
         <span className="spacer" />
@@ -429,9 +444,13 @@ export function App() {
           <span className="keys">
             <kbd>Ctrl+F</kbd> search <kbd>↑↓</kbd> select <kbd>Enter</kbd> open <kbd>→</kbd> details <kbd>Ctrl+T</kbd> time
           </span>
+        ) : tab === 'time' ? (
+          <span className="keys">
+            <kbd>←→</kbd> day <kbd>Ctrl+T</kbd> archive
+          </span>
         ) : (
           <span className="keys">
-            <kbd>←→</kbd> day <kbd>Ctrl+T</kbd> sessions
+            <kbd>Enter</kbd> read <kbd>Ctrl+Enter</kbd> open <kbd>F3</kbd> next match <kbd>Ctrl+T</kbd> sessions
           </span>
         )}
       </footer>

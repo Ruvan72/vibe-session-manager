@@ -125,6 +125,47 @@ export function absTime(ms: number): string {
   return new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+/** Matches every word of a search, for highlighting. Null when there is nothing to highlight. */
+export function highlightRegex(query: string): RegExp | null {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return null
+  // Longest first, so "merge" does not take the start of "merged" when both are searched for.
+  const alts = words.sort((a, b) => b.length - a.length).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(alts.join('|'), 'giu')
+}
+
+/** Splits text into the parts that match and those that do not, in order. */
+export function highlightParts(text: string, re: RegExp | null): { text: string; hit: boolean }[] {
+  if (!re) return [{ text, hit: false }]
+  const parts: { text: string; hit: boolean }[] = []
+  let at = 0
+  for (const m of text.matchAll(re)) {
+    if (m.index > at) parts.push({ text: text.slice(at, m.index), hit: false })
+    parts.push({ text: m[0], hit: true })
+    at = m.index + m[0].length
+  }
+  if (at < text.length) parts.push({ text: text.slice(at), hit: false })
+  return parts
+}
+
+/** The heading conversation.md puts above a turn, as its kind; null for any other heading. */
+export function turnKind(heading: string): 'user' | 'agent' | null {
+  const m = /^(You|Task for subagent|Claude|Codex|Subagent)(?: · \d{4}-\d{2}-\d{2} \d{2}:\d{2})?$/.exec(heading)
+  if (!m) return null
+  return m[1] === 'You' || m[1] === 'Task for subagent' ? 'user' : 'agent'
+}
+
+export function isWebLink(href: string): boolean {
+  return /^https?:\/\//i.test(href)
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  if (n < 1024 * 1024 * 1024) return `${Math.round(n / (1024 * 1024))} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
 export const LIGHT_LABEL: Record<Light, string> = {
   red: 'Waiting',
   yellow: 'Unread',

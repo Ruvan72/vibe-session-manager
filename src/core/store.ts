@@ -5,14 +5,15 @@
 import { EventEmitter } from 'node:events'
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import type { Agent, DayFile, HooksStatus, LabelIcon, SearchHit, SessionView, Snapshot } from '../shared/types.ts'
+import type { Agent, ArchiveStatus, DayFile, HooksStatus, LabelIcon, SearchHit, SessionView, Snapshot } from '../shared/types.ts'
+import { ConversationArchive, openNeeds, recreateFolder, type ArchiveItem } from './archive.ts'
 import { LabelStore } from './labels.ts'
 import { CodexIndex, codexHookState, codexLive, CodexReader, listCodexRollouts, readCodexLocks } from './codex.ts'
 import { CoworkIndex, coworkHomeDir, coworkRepo, listCoworkSessions, type CoworkSource } from './cowork.ts'
 import { compactEvents, EventsReader } from './events.ts'
 import { EVENTS_FILE, getHooksStatus } from './hooks.ts'
 import { readLiveSessions, type LiveInfo } from './live.ts'
-import { buildView, urgentQueue } from './model.ts'
+import { buildView, homeDirOf, titleOf, urgentQueue } from './model.ts'
 import { SeenStore } from './persist.ts'
 import { appendCustomTitle } from './rename.ts'
 import { RepoResolver } from './repo.ts'
@@ -32,6 +33,8 @@ export interface StoreOptions {
   idleGapMs?: number
   /** Override for tests. */
   isAlive?: (pid: number) => boolean
+  /** Keep a copy of every conversation. Default off. */
+  archive?: boolean
 }
 
 export interface StoreEvents {
@@ -40,11 +43,15 @@ export interface StoreEvents {
   waiting: [SessionView]
   /** A session turned yellow (finished a turn). */
   finished: [SessionView]
+  archive: [ArchiveStatus]
 }
 
 /** Transcripts untouched for this long are only checked every SLOW_EVERY polls. */
 const QUIET_MS = 10 * 60_000
 const SLOW_EVERY = 10
+/** How often the archive copies what is new. */
+const ARCHIVE_EVERY_MS = 60_000
+const ARCHIVE_PROGRESS_MS = 1000
 
 const yieldToEventLoop = () => new Promise<void>((r) => setImmediate(r))
 
@@ -68,6 +75,7 @@ export class SessionStore extends EventEmitter<StoreEvents> {
   readonly seen: SeenStore
   readonly timelog: TimeLog
   readonly labels: LabelStore
+  readonly archive: ConversationArchive
 
   private opts: StoreOptions
   private idleGapMs: number
@@ -90,6 +98,11 @@ export class SessionStore extends EventEmitter<StoreEvents> {
   private timer: NodeJS.Timeout | null = null
   private polling = false
   private pollCount = 0
+  private archiving = false
+  private archiveTimer: NodeJS.Timeout | null = null
+  private archivePass: Promise<void> | null = null
+  private archiveProgress = { done: 0, total: 0 }
+  private archiveError: string | null = null
 
   constructor(opts: StoreOptions) {
     super()
@@ -102,6 +115,8 @@ export class SessionStore extends EventEmitter<StoreEvents> {
     this.seen = new SeenStore(opts.dataDir)
     this.timelog = new TimeLog(path.join(opts.dataDir, 'time'))
     this.labels = new LabelStore(opts.dataDir)
+    this.archive = new ConversationArchive(path.join(opts.dataDir, 'archive'))
+    this.archiving = !!opts.archive
     for (const id of this.seen.takeLegacyPendingMerge()) this.labels.set(id, 'pending-merge', true)
     this.codexIndex = opts.codexDir ? new CodexIndex(path.join(opts.codexDir, 'session_index.jsonl')) : null
     this.coworkIndex = opts.coworkDir ? new CoworkIndex() : null
@@ -112,11 +127,17 @@ export class SessionStore extends EventEmitter<StoreEvents> {
     this.hooks = await getHooksStatus(this.settingsPath)
     await this.initialScan()
     this.timer = setInterval(() => void this.poll(), this.opts.pollMs ?? 1000)
+    await this.archive.load()
+    this.emit('archive', this.archiveStatus())
+    this.setArchiving(this.archiving)
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    this.archiving = false
+    if (this.archiveTimer) clearInterval(this.archiveTimer)
+    this.archiveTimer = null
     this.seen.flush()
     this.timelog.flush()
     this.labels.flush()
@@ -190,6 +211,101 @@ export class SessionStore extends EventEmitter<StoreEvents> {
       this.polling = false
     }
     return true
+  }
+
+  archiveStatus(): ArchiveStatus {
+    return {
+      enabled: this.archiving,
+      running: !!this.archivePass,
+      ...this.archiveProgress,
+      sessions: this.archive.sessionCount,
+      bytes: this.archive.bytes,
+      version: this.archive.version,
+      dir: this.archive.dir,
+      error: this.archiveError
+    }
+  }
+
+  /** Turns the archive on or off. Turning it off stops copying; what is archived stays, and can still be searched. */
+  setArchiving(on: boolean): void {
+    this.archiving = on
+    if (this.archiveTimer) clearInterval(this.archiveTimer)
+    this.archiveTimer = null
+    if (on) {
+      this.archiveTimer = setInterval(() => void this.syncArchive(), ARCHIVE_EVERY_MS)
+      void this.syncArchive()
+    }
+    this.emit('archive', this.archiveStatus())
+  }
+
+  /** What the archive should hold now: every session with activity, also those the list leaves out. */
+  private archiveItems(): ArchiveItem[] {
+    const out: ArchiveItem[] = []
+    for (const [id, reader] of this.readers) {
+      const t = reader.state
+      if (t.firstTs === null) continue
+      const view = this.views.get(id)
+      const homeDir = view?.homeDir ?? homeDirOf(t, null)
+      const repo = this.repos.get(homeDir)
+      out.push({
+        files: [...reader.sourceFiles],
+        info: {
+          id,
+          agent: reader.agent,
+          title: view?.title ?? titleOf(t),
+          repo: view?.repo ?? repo.repoName,
+          repoPath: repo.repoPath,
+          worktree: view?.worktree ?? t.worktreeName ?? repo.worktree,
+          branch: view?.branch ?? t.branches[t.branches.length - 1] ?? null,
+          homeDir,
+          entrypoint: view?.entrypoint ?? t.entrypoint,
+          firstActivity: t.firstTs,
+          lastActivity: view?.lastActivity ?? t.lastTs ?? t.firstTs
+        }
+      })
+    }
+    return out
+  }
+
+  /** One pass over all sessions. Runs on a timer while the archive is on; a call during a pass waits for it. */
+  syncArchive(): Promise<void> {
+    if (this.scanning || !this.archiving) return Promise.resolve()
+    this.archivePass ??= (async () => {
+      let lastEmit = 0
+      try {
+        this.archiveError = await this.archive.sync(this.archiveItems(), {
+          stop: () => !this.archiving,
+          onProgress: (done, total) => {
+            this.archiveProgress = { done, total }
+            if (Date.now() - lastEmit < ARCHIVE_PROGRESS_MS) return
+            lastEmit = Date.now()
+            this.emit('archive', this.archiveStatus())
+          }
+        })
+      } catch (e: any) {
+        this.archiveError = String(e?.message ?? e)
+      } finally {
+        this.archivePass = null
+        this.archiveProgress = { done: 0, total: 0 }
+        this.emit('archive', this.archiveStatus())
+      }
+    })()
+    return this.archivePass
+  }
+
+  /**
+   * Brings back what an archived session needs to be opened: its folder and its transcript. Returns a
+   * note when the folder differs from what the session had. The list has the session when this returns.
+   */
+  async restoreArchived(id: string): Promise<string | null> {
+    const found = await this.archive.infoOf(id)
+    if (!found) throw new Error('This session is not in the archive.')
+    const needs = openNeeds(found.info)
+    const note = needs.folder && !found.open.folderExists ? await recreateFolder(found.info) : null
+    if (needs.transcript && !found.open.transcriptExists) await this.archive.restoreTranscript(id)
+    while (this.polling) await new Promise((r) => setTimeout(r, 10))
+    await this.poll()
+    return note
   }
 
   /** Makes the session yellow again, e.g. read but not dealt with yet. */

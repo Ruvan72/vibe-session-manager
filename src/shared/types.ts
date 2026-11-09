@@ -98,6 +98,8 @@ export interface AppSettings {
   showUsage: boolean
   /** Ask api.anthropic.com for live Claude usage, with the sign-in token Claude Code stores. Off until the user turns it on. */
   usageFromApi: boolean
+  /** Keep a copy of every conversation in the app's data dir. Off until the user turns it on. */
+  archiveConversations: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -111,7 +113,62 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcuts: { openList: 'CommandOrControl+Alt+Space', jumpUrgent: 'CommandOrControl+Alt+Enter' },
   zoomLevel: 0,
   showUsage: true,
-  usageFromApi: false
+  usageFromApi: false,
+  archiveConversations: false
+}
+
+/** What the archive remembers about a session, so it can be found after its transcript or folder is gone. */
+export interface ArchiveSessionInfo {
+  id: string
+  agent: Agent
+  title: string
+  repo: string
+  /** The main repo's folder, for recreating a worktree. */
+  repoPath: string
+  worktree: string | null
+  branch: string | null
+  /** The folder the session lives in. */
+  homeDir: string
+  entrypoint: string | null
+  firstActivity: number
+  lastActivity: number
+}
+
+/** Checked each time a session is listed: what is still on disk, and whether opening it must restore something first. */
+export interface ArchiveOpenState {
+  folderExists: boolean
+  transcriptExists: boolean
+  needsRestore: boolean
+}
+
+export interface ArchiveHit extends ArchiveSessionInfo {
+  /** Text around the first match in the conversation; null when only the title or names match. */
+  snippet: string | null
+  open: ArchiveOpenState
+}
+
+export interface ArchiveDoc extends ArchiveSessionInfo {
+  /** The conversation as Markdown. */
+  markdown: string
+  open: ArchiveOpenState
+}
+
+export interface ArchiveStatus {
+  /** The user's "keep a copy of every conversation" setting. */
+  enabled: boolean
+  /** A pass over the sessions is under way. */
+  running: boolean
+  /** Sessions handled and in total in the current pass. */
+  done: number
+  total: number
+  /** Sessions in the archive. */
+  sessions: number
+  bytes: number
+  /** Changes when archived content changes, so the UI knows when to read again. */
+  version: number
+  dir: string
+  /** The last error of a pass, if a session could not be copied. */
+  error: string | null
 }
 
 /** One usage window (5 hours or a week). */

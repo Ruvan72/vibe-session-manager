@@ -22,6 +22,7 @@ When you run several AI coding agents at once, one per VS Code window or git wor
 - **Jump to a session**: double-click opens the right editor window with the session open. `Ctrl+Alt+Enter` goes straight to the most urgent one.
 - **Tray badge, notifications and a "blop"** when a session needs you, but not when you are already looking at its window.
 - **Search** across titles, repos, branches and the conversations themselves.
+- **Archive** (opt-in): keeps every conversation after a window is closed, a worktree is removed or Claude Code cleans up. Search and read them in the app, and bring a session back with its worktree.
 - **Labels, rename and hide** to keep the list tidy.
 - **Plan usage**: how much of the 5-hour and weekly limits Claude and Codex have used, and when they reset.
 - **Time tracking**: active time per day, repo and session, with CSV export.
@@ -69,11 +70,12 @@ Your transcripts can contain anything, so here is exactly what the app does with
 
 - **Nothing leaves your machine.** The app makes no network requests, has no telemetry and no auto-update.
 - **It reads** `~/.claude` (transcripts and live session status), the Claude desktop app's `local-agent-mode-sessions` folder (Cowork transcripts and titles), `~/.codex` (Codex sessions and titles), and VS Code's or Cursor's own `storage.json` to see which folders are open.
-- **It writes to only three places outside its own folder, and only when you act:**
+- **It writes to only these places outside its own folder, and only when you act:**
   - **Install hooks** adds one hook per event to `~/.claude/settings.json`. Your existing settings and hooks are kept, a backup is saved as `settings.json.vsm-backup`, and **Remove hooks** takes them out again. The hook records session id, event name, time and notification text. It never records prompts.
   - **Rename** appends one `custom-title` line to that session's transcript, exactly as Claude Code's own `/rename` does.
   - **Start at login** adds a Windows login item.
-- Its own data (settings, seen marks, labels, time) is in `~/.vibe-session-manager/`.
+  - **Restore** on an archived session, after you confirm, creates its worktree or folder again and puts its transcript back.
+- Its own data (settings, seen marks, labels, time) is in `~/.vibe-session-manager/`. If you turn on the archive, that includes unencrypted copies of your conversations and everything the agents read, so keep the folder out of cloud sync.
 
 ## Known limitations
 

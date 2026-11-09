@@ -64,7 +64,7 @@ function ts(v: unknown): number | null {
   return Number.isNaN(t) ? null : t
 }
 
-function textOf(content: unknown): string {
+export function textOf(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   return content
@@ -194,6 +194,10 @@ export class CodexReader {
 
   get hidden(): boolean {
     return this.state.codex.hidden
+  }
+
+  get sourceFiles(): string[] {
+    return this.files
   }
 
   /** Accepts the thread's current file list if it only adds files. Returns false if the reader must start over. */

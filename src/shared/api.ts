@@ -1,6 +1,6 @@
 // The API the preload script exposes to the renderer as window.api.
 
-import type { AppSettings, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot, UsageSnapshot } from './types.ts'
+import type { AppSettings, ArchiveDoc, ArchiveHit, ArchiveStatus, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot, UsageSnapshot } from './types.ts'
 
 export interface SettingsInfo {
   settings: AppSettings
@@ -22,7 +22,10 @@ export interface DebugActions {
   repoMenu?: boolean
   /** Open the rename field on the first Claude Code row. */
   rename?: boolean
-  tab?: 'sessions' | 'time'
+  tab?: 'sessions' | 'time' | 'archive'
+  /** Search the archive, and with archiveOpenFirst open the first result. */
+  archiveQuery?: string
+  archiveOpenFirst?: boolean
 }
 
 export interface Api {
@@ -58,6 +61,18 @@ export interface Api {
   getTimeDays(): Promise<string[]>
   getTimeDay(date: string): Promise<DayFile>
   openTimeFolder(): Promise<void>
+  getArchiveStatus(): Promise<ArchiveStatus>
+  onArchiveStatus(cb: (s: ArchiveStatus) => void): () => void
+  /** Archived sessions that match, newest first. An empty query lists them all. */
+  searchArchive(query: string): Promise<ArchiveHit[]>
+  readArchive(id: string): Promise<ArchiveDoc | null>
+  /** Opens the session in its editor, after asking to restore its folder or transcript if they are gone. */
+  openArchived(id: string): Promise<JumpResult>
+  /** Shows the session's conversation.md in Explorer. */
+  revealArchived(id: string): Promise<void>
+  openArchiveFolder(): Promise<void>
+  /** Opens an http(s) link from a conversation in the browser. */
+  openLink(url: string): Promise<void>
   onFocusSearch(cb: () => void): () => void
   onToast(cb: (message: string) => void): () => void
   /** Play the finish sound. */

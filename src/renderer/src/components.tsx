@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SettingsInfo } from '../../shared/api.ts'
-import type { Agent, AgentUsage, AppSettings, DayFile, HooksStatus, LabelDef, Light, SessionView, Snapshot, UsageSnapshot, UsageWindow } from '../../shared/types.ts'
+import type { Agent, AgentUsage, AppSettings, ArchiveStatus, DayFile, HooksStatus, LabelDef, Light, SessionView, Snapshot, UsageSnapshot, UsageWindow } from '../../shared/types.ts'
 import { LabelMenu } from './labels.tsx'
 import { playBlop } from './sound.ts'
 import {
@@ -11,6 +11,7 @@ import {
   dayKey,
   dayLabel,
   dayRows,
+  formatBytes,
   formatDuration,
   formatReset,
   groupTimeRows,
@@ -452,6 +453,12 @@ export function SettingsPanel({ info, hooks, onChange, onClose }: { info: Settin
   const [draft, setDraft] = useState<AppSettings>(info.settings)
   const save = async (patch: Partial<AppSettings> & { openAtLogin?: boolean }) => onChange(await api.setSettings(patch))
   const field = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) => setDraft((d) => ({ ...d, [k]: v }))
+  const [archive, setArchive] = useState<ArchiveStatus | null>(null)
+
+  useEffect(() => {
+    void api.getArchiveStatus().then(setArchive)
+    return api.onArchiveStatus(setArchive)
+  }, [])
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -569,6 +576,27 @@ export function SettingsPanel({ info, hooks, onChange, onClose }: { info: Settin
         </section>
 
         <section>
+          <h3>Conversation archive</h3>
+          <label className="check">
+            <input type="checkbox" checked={info.settings.archiveConversations} onChange={(e) => void save({ archiveConversations: e.target.checked })} />
+            Keep a copy of every conversation
+          </label>
+          <p className="muted">
+            Conversations from Claude Code, Cowork and Codex stay searchable in the Archive tab after a window is closed, a worktree is removed or Claude Code cleans up old sessions. The copies are not encrypted, are never deleted automatically and include everything the agents read, which can be .env files and tokens. Keep the folder out of cloud sync. Nothing leaves your machine.
+          </p>
+          {archive && (
+            <p className="muted">
+              {archive.running ? `Archiving ${archive.done} of ${archive.total}. ` : ''}
+              {archive.sessions} session{archive.sessions === 1 ? '' : 's'} archived, {formatBytes(archive.bytes)}.{' '}
+              {!info.settings.archiveConversations && archive.sessions > 0 ? 'Turning this off stops copying and keeps what is there.' : ''}
+            </p>
+          )}
+          <div className="actions">
+            <button onClick={() => void api.openArchiveFolder()}>Open archive folder</button>
+          </div>
+        </section>
+
+        <section>
           <h3>Shortcuts</h3>
           <div className="grid">
             <label htmlFor="scOpen">Open list</label>
@@ -589,7 +617,7 @@ export function SettingsPanel({ info, hooks, onChange, onClose }: { info: Settin
           {info.shortcutErrors.length > 0 && <p className="error">Could not register: {info.shortcutErrors.join(', ')}. Another app may be using it.</p>}
           <p className="muted">
             "Most urgent" jumps to the session that has waited longest (red before yellow). Press again for the next one. In the list: ↑↓, Enter, → details,
-            Ctrl+1…9 open row, Ctrl+E toggle seen/unread, Ctrl+U mark as unread, Ctrl+L labels, F2 rename, Ctrl+plus/minus/0 text size, Esc clear/minimize. Closing the window hides it to the tray; Quit is in the tray menu.
+            Ctrl+1…9 open row, Ctrl+T next tab, Ctrl+E toggle seen/unread, Ctrl+U mark as unread, Ctrl+L labels, F2 rename, Ctrl+plus/minus/0 text size, Esc clear/minimize. Closing the window hides it to the tray; Quit is in the tray menu.
           </p>
         </section>
 

@@ -32,7 +32,7 @@ Click a session to show its details (last prompt, last reply, time) and click ag
 | `Ctrl+U` | Mark as unread: the session turns yellow again until you write in it or mark it as seen |
 | `Ctrl+L` | Labels for the selected session |
 | `F2` | Rename the selected Claude Code session |
-| `Ctrl+T` | Switch between Sessions and Time |
+| `Ctrl+T` | Next tab: Sessions, Time, Archive |
 | `Ctrl` `+` / `Ctrl` `-` / `Ctrl+0` | Larger / smaller / normal text. The size is remembered |
 | `Esc` | Clear search, then minimize |
 
@@ -110,6 +110,46 @@ Under the title bar, one row per agent shows how much of its **5-hour** and **we
 
 **Show the 5-hour and weekly usage** in Settings hides the strip and stops all reading. Accounts without a Claude subscription (API key only) have no such limits.
 
+## Archive
+
+Claude Code only keeps old transcripts for a while, and its history only shows the sessions of the folder that is open. The **Archive** tab keeps a copy of every conversation, so it can still be found after a window is closed, a worktree is removed or Claude Code has cleaned up.
+
+**It is off until you turn it on**, in the tab itself or under Settings → Conversation archive. The first pass copies everything that is on disk, and after that the app copies what is new once a minute. Sessions that were already deleted before you turned it on cannot be recovered.
+
+**Search** finds words in any order, in the titles, names and all the text of the conversations: prompts, replies, pasted text and what subagents wrote. Without a search the tab lists every session, newest first.
+
+**Click a result** to read the conversation as Markdown, with the matches highlighted. In a narrow window the reader takes the place of the results, and from about 820 pixels wide they are side by side.
+
+| Key | Action |
+|---|---|
+| `↑` `↓` | Select a result |
+| `Enter` | Read the selected result, then go to the next match |
+| `Shift+Enter`, `F3`, `Shift+F3` | Previous, next, previous match |
+| `Ctrl+Enter` | Open the selected session |
+| `Ctrl+F` | Go to search |
+| `Esc` | Close the reader, then clear the search, then minimize |
+
+**Open** is on every result and in the reader. The app checks what is still there each time it lists a session:
+
+- **Folder and transcript exist:** **Open** works like double-clicking the session in the list.
+- **Something is gone:** the row says so, and the button is **Restore**. The app shows what it will do and asks first. It then opens the session.
+  - **A worktree** is created again with `git worktree add`, on its branch, while its repo exists. The files are what is committed now, so uncommitted work from the old worktree does not come back. If the branch is gone it is created from the repo's current commit, and if it is checked out elsewhere the worktree gets its commit detached.
+  - **Any other folder** comes back empty, so the session has somewhere to run.
+  - **A deleted transcript** is copied back from the archive to where it was.
+- **Cowork sessions** open in the Claude app, so the title is copied, as in the list.
+
+What the copies hold, in `~/.vibe-session-manager/archive/sessions/<session id>/`:
+
+| File | Content |
+|---|---|
+| `conversation.md` | Prompts, replies, pasted text and subagent text. Readable without the app |
+| `raw/` | Gzipped copies of the session's own files, including tool calls, their output, subagents and saved tool results |
+| `meta.json` | Title, repo, folder and how far each file has been copied |
+
+The Markdown leaves out what the agent was told behind the scenes, such as reminders and compaction summaries, and tool calls and their output. Those are in `raw/`. Thinking is not shown either: most of it is not stored as readable text.
+
+**The copies are not encrypted and include everything the agents read, which can be `.env` files and tokens. Keep the folder out of cloud sync.** They stay on your machine, and nothing is deleted automatically. Expect the archive to take a bit under half the size of the transcripts. Turning the setting off stops copying and keeps what is there, which you can still search. To remove it, delete the `archive` folder; **Open folder** takes you there.
+
 ## Time tracking
 
 The **Time** tab (`Ctrl+T`) shows active time per day: a total, then each repo, then each session with its periods. A pause longer than the idle gap (90 min by default, see Settings) ends a period and is not counted. Sessions that run in parallel both count, so a day's total can be longer than the day. **Copy day as CSV** puts the day on the clipboard, separated by semicolons.
@@ -127,6 +167,7 @@ Everything lives in `~/.vibe-session-manager/`:
 | `labels.json` | Labels and which sessions have them |
 | `time/<YYYY-MM-DD>.json` | Active time per day |
 | `window.json` | Window position and size |
+| `archive/` | Copies of your conversations (only if you turned on the archive) |
 | `hook.cjs`, `events.jsonl` | The Claude Code hook and the events it records (only if hooks are installed) |
 
 Deleting the folder resets the app. Remove the hooks first (Settings), or Claude Code will report a missing hook script.

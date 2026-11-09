@@ -37,6 +37,7 @@
     "dist:dir": "npm run build && npm run icon && electron-builder --win dir"
   },
   "dependencies": {
+    "marked": "^18.1.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
