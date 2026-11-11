@@ -1872,6 +1872,12 @@ h3 .label {
   height: 24px;
 }
 
+/* The Log button of the row whose log is open. */
+.work-actions button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+}
+
 /* Merge: the base branch on the button, the other branches behind the arrow. */
 .work-merge {
   position: relative;

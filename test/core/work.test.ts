@@ -184,6 +184,56 @@ describe('a worktree from start to cleanup', () => {
     expect(work.log.tail(200).truncated).toBe(true)
   })
 
+  it('finds in the command log what was run for one worktree, and for one action of the history', async () => {
+    const { repo, work, finished } = setup()
+    const one = await work.create(repo, 'one')
+    const two = await work.create(repo, 'two')
+    writeFileSync(path.join(one.path, 'b.txt'), 'b\n')
+    const done = finished()
+    await work.commit(one.key, 'claude')
+    await done
+
+    const ofOne = work.log.of({ worktree: one.key }).text
+    expect(ofOne).toMatch(/^===== \S+  Create worktree one in [^]*===== \S+  Commit work in one \(repo\) with Claude Code =====\n\[worktree .*one\]\n[^]*committed\s*\n\[exit 0 · \d+ ms\]\n$/)
+    expect(ofOne).not.toContain('worktree add -b two')
+    const ofTwo = work.log.of({ worktree: two.path })
+    expect(ofTwo.text).toMatch(/^===== \S+  Create worktree two in /)
+    expect(ofTwo.text).not.toContain('Commit work')
+    expect(ofTwo.truncated).toBe(false)
+    expect(work.log.of({ worktree: one.key }, 200).truncated).toBe(true)
+    expect(work.log.of({ worktree: path.join(repo, 'nowhere') }).text).toBe('')
+
+    // Each line of the history knows its own part of the log.
+    const [commit, , created] = work.readJournal()
+    expect(commit).toMatchObject({ action: 'commit', worktree: 'one' })
+    expect(work.log.of({ id: commit.log }).text).toMatch(/^===== \S+  Commit work in one [^]*\[exit 0 · \d+ ms\]\n$/)
+    expect(work.log.of({ id: created.log }).text).toMatch(/^===== \S+  Create worktree one in [^]*worktree add -b one/)
+    expect(work.log.of({ id: created.log }).text).not.toContain('Create worktree two')
+
+    // It is still found when the worktree is gone.
+    await work.cleanup(two.key, false)
+    expect(work.log.of({ id: work.readJournal()[0].log }).text).toMatch(/^===== \S+  Clean up two \(repo\) =====\n\[worktree .*two\]\n[^]*branch -d two/)
+  })
+
+  it('keeps what a command prints with its own action when another one is logged meanwhile', () => {
+    const { root, work } = setup()
+    const dir = path.join(root, 'wt')
+    const long = work.log.action('Commit work in wt', dir)
+    work.log.start(dir, 'agent')
+    work.log.write('first\n')
+    work.log.action('Refresh')
+    work.log.command(root, 'git fetch', 'fetched\n', 0, 1)
+    work.log.resume(long)
+    work.log.write('second\n')
+    work.log.resume(long)
+    work.log.end(0, 5)
+
+    const text = work.log.of({ id: long.id }).text
+    expect(text).toMatch(/first\n\n===== \S+  Commit work in wt, continued from \S+ =====\n\[worktree .*wt\]\nsecond\n\[exit 0 · 5 ms\]\n$/)
+    expect(text).not.toContain('fetched')
+    expect(work.log.of({ worktree: dir }).text).toBe(text)
+  })
+
   it('logs a command that fails, with what git said', async () => {
     const { repo, work } = setup()
     git(repo, 'branch', 'taken')

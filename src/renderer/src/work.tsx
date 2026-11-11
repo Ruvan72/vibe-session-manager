@@ -118,6 +118,8 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
   const [busy, setBusy] = useState<string | null>(null)
   const [panel, setPanel] = useState<'history' | 'log' | null>(null)
   const [log, setLog] = useState<WorkLogTail | null>(null)
+  /** The part of the command log that is shown: one worktree's, or one action of the history. Null is all of it. */
+  const [scope, setScope] = useState<{ key?: string; id?: string; label: string } | null>(null)
   const [copied, setCopied] = useState(false)
   /** The merge menu that is open: where it is ('row' or 'run') and the worktree's key. */
   const [mergeMenu, setMergeMenu] = useState<string | null>(null)
@@ -160,10 +162,15 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     if (creating) nameRef.current?.focus()
   }, [creating])
 
-  // The log is read when its panel opens and whenever something was run.
+  // The log is read when its panel opens, when another part of it is asked for, and whenever something was run.
   useEffect(() => {
-    if (panel === 'log' && active) void api.readWorkLog().then(setLog)
-  }, [panel, active, ov, run?.status])
+    if (panel !== 'log' || !active) return
+    let cancelled = false
+    void api.readWorkLog(scope ? { key: scope.key, id: scope.id } : undefined).then((l) => !cancelled && setLog(l))
+    return () => {
+      cancelled = true
+    }
+  }, [panel, active, ov, run?.status, scope])
 
   useLayoutEffect(() => {
     runRef.current?.scrollTo(0, runRef.current.scrollHeight)
@@ -240,6 +247,11 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     setTimeout(() => setCopied(false), 1500)
   }
 
+  const showLog = (s: { key?: string; id?: string; label: string }) => {
+    setScope(s)
+    setPanel('log')
+  }
+
   const actions = (i: WorkItem, withOpen: boolean) => {
     const wait = busy === i.key
     const blocked = running ? 'Wait for what is running, or stop it' : undefined
@@ -253,6 +265,7 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     const canPr = mergeable && i.hasRemote
     const menuId = `${withOpen ? 'row' : 'run'}:${i.key}`
     const noMerge = i.state === 'uncommitted' ? 'Commit the work first' : blocked
+    const logOpen = panel === 'log' && scope?.key === i.key
     const mergeInto = (b: string) => {
       setMergeMenu(null)
       void act(i.key, () => api.mergeWork(i.key, b))
@@ -328,6 +341,15 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
             onClick={() => void act(i.key, () => api.cleanupWork(i.key))}
           >
             Clean up
+          </button>
+        )}
+        {withOpen && (
+          <button
+            aria-pressed={logOpen}
+            title="Every command this tab ran for it, with everything they printed"
+            onClick={() => (logOpen ? setPanel(null) : showLog({ key: i.key, label: i.root ? `${i.repo} (repo folder)` : i.name }))}
+          >
+            Log
           </button>
         )}
       </div>
@@ -541,6 +563,14 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
                     <time title={new Date(e.at).toLocaleString()}>{absTime(Date.parse(e.at))}</time>
                     <span className="what">
                       {workJournalText(e)}
+                      {e.log && (
+                        <>
+                          {' '}
+                          <button className="link" title="The commands this ran, with everything they printed" onClick={() => showLog({ id: e.log, label: workJournalText(e) })}>
+                            Log
+                          </button>
+                        </>
+                      )}
                       {e.url && (
                         <>
                           {' '}
@@ -559,7 +589,17 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
             <>
               <header>
                 <strong>Command log</strong>
-                <span className="work-note">{log?.truncated ? 'The latest part; the file has it all' : 'Every command this tab ran, and its output'}</span>
+                {scope ? (
+                  <span className="work-note">
+                    {scope.label}
+                    {log?.truncated && ', the latest part'} ·{' '}
+                    <button className="link" onClick={() => setScope(null)}>
+                      Show all
+                    </button>
+                  </span>
+                ) : (
+                  <span className="work-note">{log?.truncated ? 'The latest part; the file has it all' : 'Every command this tab ran, and its output'}</span>
+                )}
                 <span className="spacer" />
                 <button className="link" disabled={!log?.text} onClick={copyLog}>
                   {copied ? 'Copied' : 'Copy'}
@@ -568,7 +608,7 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
                   Open file
                 </button>
               </header>
-              <pre ref={logRef}>{log?.text || 'Nothing has been run yet.'}</pre>
+              <pre ref={logRef}>{log?.text || (scope ? `Nothing in the log for ${scope.label}.` : 'Nothing has been run yet.')}</pre>
             </>
           )}
         </section>
@@ -582,7 +622,11 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
           className={`chip ${panel === 'log' ? 'on' : ''}`}
           aria-pressed={panel === 'log'}
           title="The exact commands this tab ran, with everything they printed"
-          onClick={() => setPanel((p) => (p === 'log' ? null : 'log'))}
+          onClick={() => {
+            // From one worktree's or one action's part, the button goes to the whole log.
+            setPanel(panel === 'log' && !scope ? null : 'log')
+            setScope(null)
+          }}
         >
           Command log
         </button>
