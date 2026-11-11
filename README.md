@@ -23,6 +23,7 @@ When you run several AI coding agents at once, one per VS Code window or git wor
 - **Tray badge, notifications and a "blop"** when a session needs you, but not when you are already looking at its window.
 - **Search** across titles, repos, branches and the conversations themselves.
 - **Archive** (opt-in): keeps every conversation after a window is closed, a worktree is removed or Claude Code cleans up. Search and read them in the app, and bring a session back with its worktree.
+- **Work**: start a worktree on its own branch, let an agent commit it, push, merge and clean up, with the state of every worktree in one list and a log of every command that was run.
 - **Labels, rename and hide** to keep the list tidy.
 - **Plan usage**: how much of the 5-hour and weekly limits Claude and Codex have used, and when they reset.
 - **Time tracking**: active time per day, repo and session, with CSV export.
@@ -75,6 +76,7 @@ Your transcripts can contain anything, so here is exactly what the app does with
   - **Rename** appends one `custom-title` line to that session's transcript, exactly as Claude Code's own `/rename` does.
   - **Start at login** adds a Windows login item.
   - **Restore** on an archived session, after you confirm, creates its worktree or folder again and puts its transcript back.
+  - **The Work tab** runs git in your repos when you press its buttons: it creates worktrees and branches, copies `.env` files and links or installs `node_modules` if you choose to, merges, and removes them again after asking. **Push** and the refresh button (`git fetch`) talk to the repo's own remote. **Commit work** runs the `claude` or `codex` command in the worktree, which uses that agent's account like any other session. Every command and its output is in `~/.vibe-session-manager/work/commands.log`.
 - Its own data (settings, seen marks, labels, time) is in `~/.vibe-session-manager/`. If you turn on the archive, that includes unencrypted copies of your conversations and everything the agents read, so keep the folder out of cloud sync.
 
 ## Known limitations

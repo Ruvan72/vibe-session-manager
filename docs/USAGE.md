@@ -32,7 +32,7 @@ Click a session to show its details (last prompt, last reply, time) and click ag
 | `Ctrl+U` | Mark as unread: the session turns yellow again until you write in it or mark it as seen |
 | `Ctrl+L` | Labels for the selected session |
 | `F2` | Rename the selected Claude Code session |
-| `Ctrl+T` | Next tab: Sessions, Time, Archive |
+| `Ctrl+T` | Next tab: Sessions, Time, Archive, Work |
 | `Ctrl` `+` / `Ctrl` `-` / `Ctrl+0` | Larger / smaller / normal text. The size is remembered |
 | `Esc` | Clear search, then minimize |
 
@@ -150,6 +150,47 @@ The Markdown leaves out what the agent was told behind the scenes, such as remin
 
 **The copies are not encrypted and include everything the agents read, which can be `.env` files and tokens. Keep the folder out of cloud sync.** They stay on your machine, and nothing is deleted automatically. Expect the archive to take a bit under half the size of the transcripts. Turning the setting off stops copying and keeps what is there, which you can still search. To remove it, delete the `archive` folder; **Open folder** takes you there.
 
+## Work
+
+The **Work** tab takes a piece of work from start to finish in its own git worktree, so it does not get in the way of what is checked out in the repo.
+
+**Create worktree** asks for a repo and a name. The repos are those with a session in the last 30 days and those you made a worktree in before, with the last one used picked; **Other folder…** adds one. The app then runs `git worktree add`, which makes the folder `<repo>/.claude/worktrees/<name>` on a new branch `<name>`, from the branch that is checked out in the repo's root. It opens the folder in your editor, and the worktree shows in the list. The name can have letters, digits, dash, underscore and dot.
+
+A new worktree has only the files git tracks, so the form has two options for what else to bring along. The app remembers what you chose last.
+
+- **Copy .env files** copies the repo's `.env*` files that git does not track, from the root and from subfolders, to the same places in the worktree. Hover the option to see which. Files inside `node_modules` are left out, and a file that is already in the worktree is not overwritten.
+- **node_modules** can be left out, linked or installed:
+  - **Link to the repo's** makes a link (a junction on Windows) from the worktree to each `node_modules` folder the repo has next to a tracked `package.json`. It is instant and takes no disk space, but the worktree and the repo then share the packages: an install in either changes both. **Remove such a worktree with Clean up on this tab.** It takes the links away first. `git worktree remove` on its own follows the link and deletes the repo's `node_modules`.
+  - **Run npm install** runs the install in the worktree's root after it is created, with its output on the tab. With a `pnpm-lock.yaml`, `yarn.lock` or `bun.lock` in the root it runs that package manager's install instead.
+ If the repo does not ignore `.claude/worktrees` yet, the app adds it to `.git/info/exclude`, which is local and never committed.
+
+**Work in progress** lists every linked worktree of those repos, also the ones Claude Code or you made, and the repo's own folder when it has work in it, with where each stands:
+
+| State | Meaning |
+|---|---|
+| Agent working | A session is busy in the folder. Nothing can be done to it until the session is done. |
+| Uncommitted | It has changed or new files. |
+| New | Nothing has been committed on its branch yet. |
+| Pending merge | Its commits are not in the base branch. The line also says whether the branch is pushed. |
+| Ready for cleanup | Everything is committed and in the base branch. |
+| Folder gone | The folder was deleted, but git still has the worktree on record. |
+
+Work you do in the repo's own folder, without a worktree, is in the list too, as a row named after its branch and marked **repo folder**. It is only there while something is left to do: changed or new files, commits that are not in the default branch when the folder is on another branch, or commits that are not pushed (**To push**). It has **Open**, **Commit work**, **Push** and **Merge into …**, which work as described below, and no **Clean up**: the repo's own folder is never removed. A folder that stays on a long-lived branch such as `develop` stays in the list for as long as that branch is ahead of its base. Branches that are not checked out in any folder are not listed.
+
+The base branch is the one the branch was made from. For a worktree the app created, that is the branch that was checked out in the repo's root at the time. For other worktrees, and for the repo's own folder, the app reads it from git's reflog, which has the branch that was named or checked out when the branch was made. The reflog is local and git clears entries after about 90 days, so for a branch made on another machine or long ago the base is the repo's default branch. A branch counts as merged when the base has its commits, here or on the remote as last fetched, or when merging it would change nothing, which is how a squash merge shows. The refresh button runs `git fetch` first, so merges done on GitHub show.
+
+The buttons on a worktree:
+
+- **Open** (or double-click) focuses the editor window that has the folder, or opens one.
+- **Commit work** runs the agent picked at the top (Claude Code or Codex, whichever is installed) in the worktree, without a window. It is asked to look at the changes, stage what belongs to the work and commit it in the style of the repo, and not to push or change files. What it says and runs shows as it happens, and **Stop** ends it. Claude Code gets permission for `git status`, `diff`, `log`, `show`, `add` and `commit` and for reading files, on top of what your own Claude Code settings allow. The run is an ordinary session of that agent, so it uses your plan and shows on the Sessions tab.
+- **Push** runs `git push -u` to the repo's remote.
+- **Merge into …** asks first, then merges the worktree's branch. The button names the base branch; the arrow next to it lists the repo's other local branches (DEV, master, …), so the same work can go into more than one. A worktree that is already in its base only has **Merge into…** with the list. Where the chosen branch is checked out in a folder, the merge runs there. Where it is not, the branch is moved forward if it has no commits of its own, and otherwise the merge is made in a temporary checkout that is removed again. A merge with conflicts is undone, and you merge by hand. The state in the list keeps following the base branch. Branches that only exist on the remote are not listed; check them out once to merge into them.
+- **Clean up** asks first, then removes the worktree and deletes its branch. If that would lose uncommitted files or commits that are not merged, it says exactly what, and deletes only if you choose **Delete anyway**. A branch on the remote is left alone.
+
+After a commit, the push, merge and cleanup buttons are also in the header of the output.
+
+**History** at the bottom lists what the tab has done. **Command log** shows every command the tab ran, exactly as it was run, with all its output and exit code: git commands, the agent's command line with the prompt it was given and its raw output, the install, the editor command, and each file that was copied or linked. **Open file** opens the whole log, and **Copy** takes what is shown. Reading where the worktrees stand, which happens every 20 seconds while the tab is open, is the one thing that is not logged. When the log passes 5 MB it is renamed to `commands.1.log` and a new one starts.
+
 ## Time tracking
 
 The **Time** tab (`Ctrl+T`) shows active time per day: a total, then each repo, then each session with its periods. A pause longer than the idle gap (90 min by default, see Settings) ends a period and is not counted. Sessions that run in parallel both count, so a day's total can be longer than the day. **Copy day as CSV** puts the day on the clipboard, separated by semicolons.
@@ -168,6 +209,9 @@ Everything lives in `~/.vibe-session-manager/`:
 | `time/<YYYY-MM-DD>.json` | Active time per day |
 | `window.json` | Window position and size |
 | `archive/` | Copies of your conversations (only if you turned on the archive) |
+| `work.json` | The Work tab's repos, chosen agent and the base branch of each worktree it created |
+| `work/journal.jsonl` | What the Work tab did: one line per create, commit, push, merge and cleanup |
+| `work/commands.log` | Every command the Work tab ran, with its output |
 | `hook.cjs`, `events.jsonl` | The Claude Code hook and the events it records (only if hooks are installed) |
 
 Deleting the folder resets the app. Remove the hooks first (Settings), or Claude Code will report a missing hook script.

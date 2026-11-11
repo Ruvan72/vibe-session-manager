@@ -1,6 +1,6 @@
 // The API the preload script exposes to the renderer as window.api.
 
-import type { AppSettings, ArchiveDoc, ArchiveHit, ArchiveStatus, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot, UsageSnapshot } from './types.ts'
+import type { AppSettings, ArchiveDoc, ArchiveHit, ArchiveStatus, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot, UsageSnapshot, WorkAgent, WorkCreateOptions, WorkLogTail, WorkOverview, WorkResult, WorkRun, WorkSetupInfo } from './types.ts'
 
 export interface SettingsInfo {
   settings: AppSettings
@@ -22,7 +22,10 @@ export interface DebugActions {
   repoMenu?: boolean
   /** Open the rename field on the first Claude Code row. */
   rename?: boolean
-  tab?: 'sessions' | 'time' | 'archive'
+  tab?: 'sessions' | 'time' | 'archive' | 'work'
+  /** On the Work tab: open the form for a new worktree, or the command log. */
+  workCreate?: boolean
+  workLog?: boolean
   /** Search the archive, and with archiveOpenFirst open the first result. */
   archiveQuery?: string
   archiveOpenFirst?: boolean
@@ -73,6 +76,37 @@ export interface Api {
   openArchiveFolder(): Promise<void>
   /** Opens an http(s) link from a conversation in the browser. */
   openLink(url: string): Promise<void>
+  /** The Work tab: repos, worktrees and where each stands. With fetch, asks the remotes first. */
+  getWork(opts?: { fetch?: boolean }): Promise<WorkOverview>
+  /** The commit, push or merge that is running, as its text grows; null when it is dismissed. */
+  onWorkRun(cb: (run: WorkRun | null) => void): () => void
+  /** Worktrees changed on disk; read the overview again. */
+  onWorkChanged(cb: () => void): () => void
+  /** Creates <repo>/.claude/worktrees/<name> on a new branch of that name, brings along what the options say, and opens the editor on it. */
+  createWork(repoPath: string, name: string, opts: WorkCreateOptions): Promise<WorkResult>
+  /** What the repo has that a new worktree can bring along: .env files, node_modules, an install command. */
+  getWorkSetup(repoPath: string): Promise<WorkSetupInfo>
+  /** Asks for a repo folder that is not in the list. Null when cancelled; else whether it could be added. */
+  pickWorkRepo(): Promise<(WorkResult & { path: string }) | null>
+  /** Opens (or focuses) the editor window for the worktree. */
+  openWork(key: string): Promise<WorkResult>
+  /** Lets the agent commit what is in the worktree; its text arrives through onWorkRun. */
+  commitWork(key: string, agent: WorkAgent): Promise<WorkResult>
+  pushWork(key: string): Promise<WorkResult>
+  /** Asks first, then merges the worktree's branch into the given local branch, or into its base. */
+  mergeWork(key: string, into?: string): Promise<WorkResult>
+  /** Asks first, then removes the worktree and deletes its branch. */
+  cleanupWork(key: string): Promise<WorkResult>
+  stopWork(): Promise<void>
+  /** Takes a finished run off the screen. */
+  dismissWorkRun(): Promise<void>
+  setWorkAgent(agent: WorkAgent): Promise<void>
+  /** Shows the journal file in Explorer. */
+  showWorkJournal(): Promise<void>
+  /** The end of the command log: every command the Work tab ran, with its output. */
+  readWorkLog(): Promise<WorkLogTail>
+  /** Opens the whole command log in the program for .log files. */
+  openWorkLog(): Promise<void>
   onFocusSearch(cb: () => void): () => void
   onToast(cb: (message: string) => void): () => void
   /** Play the finish sound. */

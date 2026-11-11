@@ -5,6 +5,7 @@ import { ArchiveView } from './archive.tsx'
 import { AgentIcon, Detail, LightIcon, RepoFilter, SettingsPanel, TimeView, TitleEditor, UsageStrip, Where } from './components.tsx'
 import { LabelGlyph, LabelList } from './labels.tsx'
 import { playBlop } from './sound.ts'
+import { WorkView } from './work.tsx'
 import { flattenGroups, groupSessions, LIGHT_LABEL, relTime, repoOptions, visibleSessions, type Filters, type Range } from './view.ts'
 
 const api = window.api
@@ -12,11 +13,12 @@ const EMPTY: Snapshot = { sessions: [], hooks: 'none', scanning: true, counts: {
 
 const NO_USAGE: UsageSnapshot = { enabled: false, fromApi: false, claude: null, codex: null, claudeNote: null }
 
-type Tab = 'sessions' | 'time' | 'archive'
+type Tab = 'sessions' | 'time' | 'archive' | 'work'
 const TABS: { id: Tab; name: string }[] = [
   { id: 'sessions', name: 'Sessions' },
   { id: 'time', name: 'Time' },
-  { id: 'archive', name: 'Archive' }
+  { id: 'archive', name: 'Archive' },
+  { id: 'work', name: 'Work' }
 ]
 
 export function App() {
@@ -177,6 +179,10 @@ export function App() {
     }
     // The archive handles its own keys.
     if (tab === 'archive') return
+    if (tab === 'work') {
+      if (e.key === 'Escape') void api.minimize()
+      return
+    }
     if (mod && e.key.toLowerCase() === 'f') {
       e.preventDefault()
       setTab('sessions')
@@ -321,8 +327,10 @@ export function App() {
 
       {/* Stays mounted, so the search and the place in a conversation are there when coming back. */}
       <ArchiveView active={tab === 'archive'} paused={!!settings} debug={archiveDebug} now={now} onMessage={setToast} />
+      {/* Stays mounted too, so a half-typed name and the open panels are there when coming back. */}
+      <WorkView active={tab === 'work'} debug={archiveDebug} now={now} onMessage={setToast} />
 
-      {tab === 'archive' ? null : tab === 'time' ? (
+      {tab === 'archive' || tab === 'work' ? null : tab === 'time' ? (
         <TimeView snap={snap} onJump={jumpById} onMessage={setToast} />
       ) : (
       <>
@@ -436,7 +444,7 @@ export function App() {
 
       <footer className="statusbar">
         <span>
-          {tab === 'sessions' ? `${ordered.length} of ${snap.sessions.length}` : tab === 'time' ? 'Active time; idle gaps not counted' : ''}
+          {tab === 'sessions' ? `${ordered.length} of ${snap.sessions.length}` : tab === 'time' ? 'Active time; idle gaps not counted' : tab === 'work' ? 'Worktrees live in .claude/worktrees of each repo' : ''}
           {snap.scanning ? ' · reading…' : ''}
         </span>
         <span className="spacer" />
@@ -448,9 +456,13 @@ export function App() {
           <span className="keys">
             <kbd>←→</kbd> day <kbd>Ctrl+T</kbd> archive
           </span>
+        ) : tab === 'archive' ? (
+          <span className="keys">
+            <kbd>Enter</kbd> read <kbd>Ctrl+Enter</kbd> open <kbd>F3</kbd> next match <kbd>Ctrl+T</kbd> work
+          </span>
         ) : (
           <span className="keys">
-            <kbd>Enter</kbd> read <kbd>Ctrl+Enter</kbd> open <kbd>F3</kbd> next match <kbd>Ctrl+T</kbd> sessions
+            <kbd>Ctrl+T</kbd> sessions
           </span>
         )}
       </footer>

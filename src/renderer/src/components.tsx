@@ -91,7 +91,8 @@ export function UsageStrip({ usage, now, onSettings }: { usage: UsageSnapshot; n
             .map((s) => (
               <div key={s.name} className="usage-row usage-sub">
                 <span className="usage-name" title={`${name}'s weekly ${s.name} limit`}>
-                  {s.name}
+                  <AgentIcon agent={agent} />
+                  <span className="usage-scope">{s.name}</span>
                 </span>
                 <span aria-hidden="true" />
                 <UsageCell label="7d" long={`Weekly ${s.name} limit`} w={s} usage={u} now={now} />

@@ -1,8 +1,8 @@
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { drawTrayIcon } from '../../src/main/icon.ts'
-import { clipToDay, dayCsv, displayOrder, formatDuration, groupSessions, relTime, repoOptions, shiftDay, visibleSessions } from '../../src/renderer/src/view.ts'
-import type { SessionView } from '../../src/shared/types.ts'
+import { clipToDay, dayCsv, displayOrder, formatDuration, groupSessions, relTime, repoOptions, shiftDay, visibleSessions, workDetail, workJournalText } from '../../src/renderer/src/view.ts'
+import type { SessionView, WorkItem, WorkJournalEntry } from '../../src/shared/types.ts'
 
 const NOW = Date.parse('2026-10-01T12:00:00')
 const H = 3600_000
@@ -121,5 +121,38 @@ describe('time helpers', () => {
     expect(row).toContain(';90;')
     // Day files from before Codex support have no agent: they are Claude Code.
     expect(row.endsWith(';claude')).toBe(true)
+  })
+})
+
+describe('work', () => {
+  const item = (extra: Partial<WorkItem>): WorkItem => ({ key: 'k', repoPath: 'c:\\dev\\r', repo: 'r', root: false, name: 'fix', path: 'c:\\dev\\r\\.claude\\worktrees\\fix', branch: 'fix', base: 'main', state: 'new', changed: 0, ahead: 0, toPush: null, hasRemote: true, sessionOpen: false, locked: false, lastCommitAt: null, ...extra })
+
+  it('says what is in a worktree and how far it has come', () => {
+    expect(workDetail(item({}))).toBe('No commits yet · from main')
+    expect(workDetail(item({ state: 'uncommitted', changed: 1, ahead: 2 }))).toBe('1 file changed · 2 commits not in main')
+    expect(workDetail(item({ state: 'pending-merge', ahead: 1 }))).toBe('1 commit not in main · not pushed')
+    expect(workDetail(item({ state: 'pending-merge', ahead: 3, toPush: 2 }))).toBe('3 commits not in main · 2 commits to push')
+    expect(workDetail(item({ state: 'pending-merge', ahead: 3, toPush: 0 }))).toBe('3 commits not in main · pushed')
+    expect(workDetail(item({ state: 'pending-merge', ahead: 3, hasRemote: false }))).toBe('3 commits not in main')
+    expect(workDetail(item({ state: 'ready' }))).toBe('Everything is in main')
+    expect(workDetail(item({ state: 'working' }))).toBe('A session is busy here')
+  })
+
+  it("says what is left in the repo's own folder", () => {
+    const own = (extra: Partial<WorkItem>) => item({ root: true, name: 'r', path: 'c:\\dev\\r', branch: 'main', base: null, toPush: 0, ...extra })
+    expect(workDetail(own({ state: 'uncommitted', changed: 2 }))).toBe('2 files changed')
+    expect(workDetail(own({ state: 'uncommitted', changed: 1, toPush: 3 }))).toBe('1 file changed · 3 commits to push')
+    expect(workDetail(own({ state: 'unpushed', toPush: 1 }))).toBe('1 commit to push')
+    expect(workDetail(own({ state: 'pending-merge', branch: 'feat', base: 'main', ahead: 2 }))).toBe('2 commits not in main · pushed')
+  })
+
+  it('tells the history in sentences', () => {
+    const e = (extra: Partial<WorkJournalEntry>): WorkJournalEntry => ({ at: '2026-11-11T10:00:00.000Z', action: 'create', repo: 'r', repoPath: 'c:\\dev\\r', worktree: 'fix', branch: 'fix', base: 'main', ok: true, ...extra })
+    expect(workJournalText(e({}))).toBe('Created fix from main')
+    expect(workJournalText(e({ action: 'commit', agent: 'claude' }))).toBe('Claude committed in fix')
+    expect(workJournalText(e({ action: 'commit', agent: 'claude', ok: false, detail: 'stopped' }))).toBe('Commit in fix did not finish (stopped)')
+    expect(workJournalText(e({ action: 'merge', detail: 'into main' }))).toBe('Merged fix into main')
+    expect(workJournalText(e({ action: 'merge', detail: 'into dev', ok: false }))).toBe('Could not merge fix into dev')
+    expect(workJournalText(e({ action: 'cleanup', detail: 'discarded unmerged work' }))).toBe('Removed fix (discarded unmerged work)')
   })
 })
