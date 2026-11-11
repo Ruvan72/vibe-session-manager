@@ -1,6 +1,6 @@
 // The API the preload script exposes to the renderer as window.api.
 
-import type { AppSettings, ArchiveDoc, ArchiveHit, ArchiveStatus, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot, UsageSnapshot, WorkAgent, WorkCreateOptions, WorkLogTail, WorkOverview, WorkResult, WorkRun, WorkSetupInfo } from './types.ts'
+import type { AppSettings, ArchiveDoc, ArchiveHit, ArchiveStatus, DayFile, HooksStatus, JumpResult, LabelIcon, SearchHit, Snapshot, UsageSnapshot, WorkAgent, WorkCreateOptions, WorkLogScope, WorkLogTail, WorkOverview, WorkResult, WorkRun, WorkSetupInfo } from './types.ts'
 
 export interface SettingsInfo {
   settings: AppSettings
@@ -105,8 +105,8 @@ export interface Api {
   setWorkAgent(agent: WorkAgent): Promise<void>
   /** Shows the journal file in Explorer. */
   showWorkJournal(): Promise<void>
-  /** The end of the command log: every command the Work tab ran, with its output. */
-  readWorkLog(): Promise<WorkLogTail>
+  /** The end of the command log: every command the Work tab ran, with its output. With a scope, only one worktree's or one action's. */
+  readWorkLog(scope?: WorkLogScope): Promise<WorkLogTail>
   /** Opens the whole command log in the program for .log files. */
   openWorkLog(): Promise<void>
   onFocusSearch(cb: () => void): () => void

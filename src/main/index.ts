@@ -41,7 +41,7 @@ import {
   WorkManager
 } from '../core/index.ts'
 import type { DebugActions, SettingsInfo } from '../shared/api.ts'
-import type { AppSettings, JumpResult, LabelIcon, SessionView, Snapshot, WorkAgent, WorkCreateOptions, WorkResult } from '../shared/types.ts'
+import type { AppSettings, JumpResult, LabelIcon, SessionView, Snapshot, WorkAgent, WorkCreateOptions, WorkLogScope, WorkResult } from '../shared/types.ts'
 import { foregroundWindowTitle, titleShowsSession } from './foreground.ts'
 import { drawAppIcon, drawTrayIcon, SPINNER_FRAMES } from './icon.ts'
 
@@ -513,7 +513,7 @@ async function workAction(fn: () => Promise<string | void>): Promise<WorkResult>
 async function openWorktreeInEditor(dir: string): Promise<void> {
   const target = editorTarget(dir, readEditorState(editorStorageFile()))
   const started = Date.now()
-  work.log.action(`Open the editor on ${dir}`)
+  work.log.action(`Open the editor on ${dir}`, dir)
   work.log.start(process.cwd(), windowsCommandLine(settings.editorCommand, target))
   try {
     await runEditorCli(settings.editorCommand, target)
@@ -793,7 +793,11 @@ function registerIpc(): void {
     if (existsSync(work.journalFile)) shell.showItemInFolder(work.journalFile)
     else await shell.openPath(dataDir)
   })
-  ipcMain.handle('work-log', () => ({ file: work.log.file, ...work.log.tail() }))
+  ipcMain.handle('work-log', (_e, scope?: WorkLogScope) => {
+    const id = typeof scope?.id === 'string' && scope.id ? scope.id : undefined
+    const worktree = typeof scope?.key === 'string' && scope.key ? scope.key : undefined
+    return { file: work.log.file, ...(id || worktree ? work.log.of({ id, worktree }) : work.log.tail()) }
+  })
   ipcMain.handle('work-log-open', async () => {
     if (existsSync(work.log.file)) await shell.openPath(work.log.file)
   })
