@@ -95,6 +95,8 @@ export interface Api {
   pushWork(key: string): Promise<WorkResult>
   /** Asks first, then merges the worktree's branch into the given local branch, or into its base. */
   mergeWork(key: string, into?: string): Promise<WorkResult>
+  /** Asks first, then pushes the branch if needed and opens a pull request into its base with the GitHub CLI. */
+  prWork(key: string): Promise<WorkResult>
   /** Asks first, then removes the worktree and deletes its branch. */
   cleanupWork(key: string): Promise<WorkResult>
   stopWork(): Promise<void>

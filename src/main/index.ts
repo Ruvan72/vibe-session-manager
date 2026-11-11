@@ -559,6 +559,28 @@ function mergeWorktree(key: string, into?: string): Promise<WorkResult> {
   })
 }
 
+function prWorktree(key: string): Promise<WorkResult> {
+  return workAction(async () => {
+    const plan = await work.prPlan(key)
+    const { branch, ahead } = plan.item
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Create pull request', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Pull request',
+      message: `Open a pull request for ${branch} into ${plan.base}?`,
+      detail: [
+        plan.push ? `${branch} is pushed to ${plan.remote} first.` : '',
+        `The GitHub CLI opens the pull request (gh pr create --fill), with the title and description taken from the ${ahead === 1 ? 'commit' : `${ahead} commits`}. Others can see it from then on.`
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+    })
+    if (response === 0) await work.pr(key)
+  })
+}
+
 function cleanupWorktree(key: string): Promise<WorkResult> {
   return workAction(async () => {
     const plan = await work.cleanupPlan(key)
@@ -760,6 +782,7 @@ function registerIpc(): void {
   ipcMain.handle('work-commit', (_e, key: string, agent: WorkAgent) => workAction(() => work.commit(String(key), agent)))
   ipcMain.handle('work-push', (_e, key: string) => workAction(() => work.push(String(key))))
   ipcMain.handle('work-merge', (_e, key: string, into?: string) => mergeWorktree(String(key), typeof into === 'string' && into ? into : undefined))
+  ipcMain.handle('work-pr', (_e, key: string) => prWorktree(String(key)))
   ipcMain.handle('work-cleanup', (_e, key: string) => cleanupWorktree(String(key)))
   ipcMain.handle('work-stop', () => work.stop())
   ipcMain.handle('work-dismiss', () => work.dismissRun())

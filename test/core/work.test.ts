@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { agentCommand, claudeStreamText, createdFrom, installCommand, parseStatus, parseWorktreeList, rootState, unlinkNodeModules, WorkManager, workState, worktreeNameError } from '../../src/core/work.ts'
+import { agentCommand, claudeStreamText, createdFrom, installCommand, parseStatus, parseWorktreeList, prInText, rootState, unlinkNodeModules, WorkManager, workState, worktreeNameError } from '../../src/core/work.ts'
 import type { LiveStatus, WorkRun } from '../../src/shared/types.ts'
 import { tmpDir } from './helpers.ts'
 
@@ -95,6 +95,8 @@ describe('reading git output', () => {
   })
 })
 
+const GH_STAND_IN = `const a = process.argv.slice(1); console.log(a.includes('list') ? JSON.stringify([{ number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'listed' }]) : 'https://github.com/o/r/pull/8')`
+
 function setup(sessions: { homeDir: string; status: LiveStatus }[] = []) {
   const root = tmpDir()
   const repo = path.join(root, 'repo')
@@ -111,7 +113,10 @@ function setup(sessions: { homeDir: string; status: LiveStatus }[] = []) {
     sessions: () => sessions,
     detectAgents: async () => ['claude'],
     // Stands in for the agent: commits everything, like the real one is asked to.
-    agentCommand: () => 'git add -A && git commit -q -m "by the agent" && echo committed'
+    agentCommand: () => 'git add -A && git commit -q -m "by the agent" && echo committed',
+    detectGh: async () => true,
+    // Stands in for the GitHub CLI: one open pull request in the list, and a link for the one it makes.
+    ghCommand: (args) => [process.execPath, '-e', GH_STAND_IN, ...args]
   })
   const item = async (name: string) => (await work.overview()).items.find((i) => i.name === name)
   const finished = () =>
@@ -369,6 +374,83 @@ describe("work in the repo's own folder", () => {
     expect(await item('repo')).toMatchObject({ root: true, state: 'uncommitted', sessionOpen: false })
     sessions.push({ homeDir: repo, status: 'busy' })
     expect(await item('repo')).toMatchObject({ state: 'working', sessionOpen: true })
+  })
+})
+
+describe('pull requests', () => {
+  const withRemote = (pushMain = true) => {
+    const s = setup()
+    const remote = path.join(s.root, 'remote.git')
+    git(s.root, 'init', '-q', '--bare', remote)
+    git(s.repo, 'remote', 'add', 'origin', remote)
+    if (pushMain) git(s.repo, 'push', '-q', '-u', 'origin', 'main')
+    return { ...s, remote }
+  }
+  const commitIn = (dir: string) => {
+    writeFileSync(path.join(dir, 'b.txt'), 'b\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', 'one')
+  }
+
+  it('finds the link in what the GitHub CLI says', () => {
+    expect(prInText('Creating pull request for fix into main in o/r\n\nhttps://github.com/o/r/pull/12\n')).toEqual({ number: 12, url: 'https://github.com/o/r/pull/12' })
+    expect(prInText('a pull request for branch "fix" into branch "main" already exists:\nhttps://github.com/o/r/pull/3')).toEqual({ number: 3, url: 'https://github.com/o/r/pull/3' })
+    expect(prInText('remote: Create a pull request by visiting https://github.com/o/r/pull/new/fix')).toBeNull()
+    expect(prInText('')).toBeNull()
+  })
+
+  it('pushes the branch and opens one into the base', async () => {
+    const { repo, remote, work, item, finished } = withRemote()
+    const made = await work.create(repo, 'fix')
+    await expect(work.prPlan(made.key)).rejects.toThrow(/no commits/)
+    writeFileSync(path.join(made.path, 'b.txt'), 'b\n')
+    await expect(work.prPlan(made.key)).rejects.toThrow(/uncommitted/)
+    git(made.path, 'add', '.')
+    git(made.path, 'commit', '-q', '-m', 'one')
+    expect(await work.prPlan(made.key)).toMatchObject({ base: 'main', remote: 'origin', push: true })
+    expect((await item('fix'))?.pr).toBeNull()
+
+    const done = finished()
+    await work.pr(made.key)
+    const run = await done
+    expect(run).toMatchObject({ kind: 'pr', status: 'ok' })
+    expect(run.text).toContain('$ git push -u origin fix')
+    expect(run.text).toContain('https://github.com/o/r/pull/8')
+    expect(git(remote, 'log', '-1', '--format=%s', 'fix')).toBe('one')
+    expect(await item('fix')).toMatchObject({ state: 'pending-merge', toPush: 0, pr: { number: 8, url: 'https://github.com/o/r/pull/8' } })
+    expect(work.readJournal()[0]).toMatchObject({ action: 'pr', worktree: 'fix', base: 'main', ok: true, detail: 'into main', url: 'https://github.com/o/r/pull/8' })
+    const log = readFileSync(work.log.file, 'utf8')
+    expect(log).toMatch(/===== \S+  Open a pull request for fix into main \(repo\)/)
+    expect(log).toMatch(/pr create --base main --head fix --fill\nhttps:\/\/github\.com\/o\/r\/pull\/8\s*\n\[exit 0/)
+    // Pushed already: the next one would not push again.
+    expect((await work.prPlan(made.key)).push).toBe(false)
+  })
+
+  it('needs the base branch on the remote', async () => {
+    const { repo, work } = withRemote(false)
+    const made = await work.create(repo, 'fix')
+    commitIn(made.path)
+    await expect(work.prPlan(made.key)).rejects.toThrow(/main is not on origin/)
+  })
+
+  it('needs a remote', async () => {
+    const { repo, work } = setup()
+    const made = await work.create(repo, 'fix')
+    commitIn(made.path)
+    await expect(work.prPlan(made.key)).rejects.toThrow(/no remote/)
+  })
+
+  it('reads the open pull requests on a refresh', async () => {
+    const { repo, work } = withRemote()
+    const listed = await work.create(repo, 'listed')
+    commitIn(listed.path)
+    const other = await work.create(repo, 'other')
+    expect((await work.overview()).items.map((i) => i.pr)).toEqual([null, null])
+    const ov = await work.overview({ fetch: true })
+    expect(ov.gh).toBe(true)
+    expect(ov.items.find((i) => i.key === listed.key)?.pr).toEqual({ number: 7, url: 'https://github.com/o/r/pull/7' })
+    expect(ov.items.find((i) => i.key === other.key)?.pr).toBeNull()
+    expect(readFileSync(work.log.file, 'utf8')).toContain('pr list --state open')
   })
 })
 

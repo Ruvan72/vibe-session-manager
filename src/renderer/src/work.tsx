@@ -250,6 +250,7 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     // The repo's own folder is only merged when it is on a branch with a base to go back into.
     const canMerge = targets.length > 0 && (!i.root || !!i.base) && (i.state === 'pending-merge' || i.state === 'ready' || i.state === 'uncommitted')
     const canPush = (mergeable || i.state === 'unpushed') && !!i.branch && i.hasRemote && i.toPush !== 0
+    const canPr = mergeable && i.hasRemote
     const menuId = `${withOpen ? 'row' : 'run'}:${i.key}`
     const noMerge = i.state === 'uncommitted' ? 'Commit the work first' : blocked
     const mergeInto = (b: string) => {
@@ -278,6 +279,20 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
             Push
           </button>
         )}
+        {canPr &&
+          (i.pr ? (
+            <button title={`Open the pull request in the browser\n${i.pr.url}`} onClick={() => void api.openLink(i.pr!.url)}>
+              Open PR #{i.pr.number}
+            </button>
+          ) : (
+            <button
+              disabled={!ov?.gh || running || wait}
+              title={!ov?.gh ? 'Needs the GitHub CLI (gh) on this machine' : (blocked ?? `Asks first, then ${i.toPush !== 0 ? 'pushes and ' : ''}opens a pull request for ${i.branch} into ${i.base} with the GitHub CLI`)}
+              onClick={() => void act(i.key, () => api.prWork(i.key))}
+            >
+              Create PR
+            </button>
+          ))}
         {canMerge && (
           <div className="work-merge">
             {mergeable && targets[0] === i.base ? (
@@ -524,7 +539,17 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
                 {ov?.journal.map((e: WorkJournalEntry, n) => (
                   <li key={n} className={e.ok ? '' : 'failed'} title={e.repoPath}>
                     <time title={new Date(e.at).toLocaleString()}>{absTime(Date.parse(e.at))}</time>
-                    <span className="what">{workJournalText(e)}</span>
+                    <span className="what">
+                      {workJournalText(e)}
+                      {e.url && (
+                        <>
+                          {' '}
+                          <button className="link" title={e.url} onClick={() => void api.openLink(e.url!)}>
+                            Open
+                          </button>
+                        </>
+                      )}
+                    </span>
                     <span className="where">{e.repo}</span>
                   </li>
                 ))}

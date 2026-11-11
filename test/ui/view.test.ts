@@ -125,7 +125,7 @@ describe('time helpers', () => {
 })
 
 describe('work', () => {
-  const item = (extra: Partial<WorkItem>): WorkItem => ({ key: 'k', repoPath: 'c:\\dev\\r', repo: 'r', root: false, name: 'fix', path: 'c:\\dev\\r\\.claude\\worktrees\\fix', branch: 'fix', base: 'main', state: 'new', changed: 0, ahead: 0, toPush: null, hasRemote: true, sessionOpen: false, locked: false, lastCommitAt: null, ...extra })
+  const item = (extra: Partial<WorkItem>): WorkItem => ({ key: 'k', repoPath: 'c:\\dev\\r', repo: 'r', root: false, name: 'fix', path: 'c:\\dev\\r\\.claude\\worktrees\\fix', branch: 'fix', base: 'main', state: 'new', changed: 0, ahead: 0, toPush: null, hasRemote: true, sessionOpen: false, locked: false, lastCommitAt: null, pr: null, ...extra })
 
   it('says what is in a worktree and how far it has come', () => {
     expect(workDetail(item({}))).toBe('No commits yet · from main')
@@ -134,6 +134,7 @@ describe('work', () => {
     expect(workDetail(item({ state: 'pending-merge', ahead: 3, toPush: 2 }))).toBe('3 commits not in main · 2 commits to push')
     expect(workDetail(item({ state: 'pending-merge', ahead: 3, toPush: 0 }))).toBe('3 commits not in main · pushed')
     expect(workDetail(item({ state: 'pending-merge', ahead: 3, hasRemote: false }))).toBe('3 commits not in main')
+    expect(workDetail(item({ state: 'pending-merge', ahead: 1, toPush: 0, pr: { number: 8, url: 'https://github.com/o/r/pull/8' } }))).toBe('1 commit not in main · pushed · pull request #8 open')
     expect(workDetail(item({ state: 'ready' }))).toBe('Everything is in main')
     expect(workDetail(item({ state: 'working' }))).toBe('A session is busy here')
   })
@@ -153,6 +154,8 @@ describe('work', () => {
     expect(workJournalText(e({ action: 'commit', agent: 'claude', ok: false, detail: 'stopped' }))).toBe('Commit in fix did not finish (stopped)')
     expect(workJournalText(e({ action: 'merge', detail: 'into main' }))).toBe('Merged fix into main')
     expect(workJournalText(e({ action: 'merge', detail: 'into dev', ok: false }))).toBe('Could not merge fix into dev')
+    expect(workJournalText(e({ action: 'pr', detail: 'into main', url: 'https://github.com/o/r/pull/8' }))).toBe('Opened a pull request for fix into main')
+    expect(workJournalText(e({ action: 'pr', detail: 'into main', ok: false }))).toBe('Could not open a pull request for fix into main')
     expect(workJournalText(e({ action: 'cleanup', detail: 'discarded unmerged work' }))).toBe('Removed fix (discarded unmerged work)')
   })
 })
