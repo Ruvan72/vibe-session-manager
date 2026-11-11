@@ -188,6 +188,13 @@ export interface AgentUsage {
   updatedAt: number
   fiveHour: UsageWindow | null
   sevenDay: UsageWindow | null
+  /** Weekly limits that only count one model (Claude's Fable limit), when the API reports any. */
+  scoped?: ScopedUsageWindow[]
+}
+
+export interface ScopedUsageWindow extends UsageWindow {
+  /** What the limit counts, as the API names it ("Fable"). */
+  name: string
 }
 
 export interface UsageSnapshot {
@@ -227,4 +234,130 @@ export interface DayFile {
   /** Local date, YYYY-MM-DD. */
   date: string
   sessions: Record<string, TimeEntry>
+}
+
+/** Agents that can do work from the Work tab; each needs its CLI on the machine. */
+export type WorkAgent = 'claude' | 'codex'
+
+/**
+ * Where a worktree stands, in the order it is decided: its folder is gone, an agent is busy in it, it has
+ * uncommitted files, it has no commits of its own yet, its commits are not in the base branch, or all is merged.
+ * 'unpushed' is only for the repo's own folder: all is committed and merged, but the remote does not have it.
+ */
+export type WorkState = 'orphaned' | 'working' | 'uncommitted' | 'new' | 'pending-merge' | 'unpushed' | 'ready'
+
+/** One checkout of a repo the app knows: a linked git worktree, or the repo's own folder when it has work in it. */
+export interface WorkItem {
+  /** Normalised folder path; what the actions take. */
+  key: string
+  repoPath: string
+  repo: string
+  /** The repo's own folder, not a linked worktree. It is never removed. */
+  root: boolean
+  /** The folder's name. */
+  name: string
+  path: string
+  /** Null when HEAD is detached. */
+  branch: string | null
+  /** The branch its work goes back into: the one it was created from here, else the repo's default branch. */
+  base: string | null
+  state: WorkState
+  /** Files with uncommitted changes, untracked ones included. */
+  changed: number
+  /** Commits that are not in the base branch. */
+  ahead: number
+  /** Commits not on the remote yet; null when the branch has never been pushed. */
+  toPush: number | null
+  hasRemote: boolean
+  /** A session is open in the folder (working or waiting). */
+  sessionOpen: boolean
+  /** Locked with `git worktree lock`. */
+  locked: boolean
+  lastCommitAt: number | null
+}
+
+export interface WorkRepo {
+  path: string
+  name: string
+  /** The branch checked out in the repo's root, which a new worktree branches from. */
+  branch: string | null
+  /** The repo's local branches, the one last committed to first: what a worktree's branch can be merged into. */
+  branches: string[]
+}
+
+/** A commit, push or merge that is running or has just ended, with the text it printed. */
+export interface WorkRun {
+  id: number
+  /** The WorkItem it works on. */
+  key: string
+  kind: 'commit' | 'push' | 'merge' | 'install'
+  title: string
+  agent: WorkAgent | null
+  text: string
+  status: 'running' | 'ok' | 'failed' | 'stopped'
+}
+
+/** One line of <dataDir>/work/journal.jsonl: something the Work tab did. */
+export interface WorkJournalEntry {
+  /** ISO time. */
+  at: string
+  action: 'create' | 'install' | 'commit' | 'push' | 'merge' | 'cleanup'
+  repo: string
+  repoPath: string
+  worktree: string
+  branch: string | null
+  base: string | null
+  agent?: WorkAgent
+  ok: boolean
+  detail?: string
+}
+
+export interface WorkOverview {
+  /** The agents whose CLI is installed. */
+  agents: WorkAgent[]
+  /** The agent the user picked last, if it is still installed. */
+  agent: WorkAgent | null
+  repos: WorkRepo[]
+  /** The repo a worktree was last created in. */
+  lastRepo: string | null
+  items: WorkItem[]
+  /** Newest first. */
+  journal: WorkJournalEntry[]
+  /** The options a worktree was last created with. */
+  setup: WorkCreateOptions
+  run: WorkRun | null
+}
+
+/** What to bring along into a new worktree, which starts with only the files git tracks. */
+export interface WorkCreateOptions {
+  /** Copy the repo's untracked .env* files to the same places in the worktree. */
+  copyEnv: boolean
+  /**
+   * node_modules: leave it out, link to the repo's own (a junction on Windows), or run the package
+   * manager's install in the worktree.
+   */
+  deps: 'none' | 'link' | 'install'
+}
+
+/** What a repo has that the options can bring along. */
+export interface WorkSetupInfo {
+  /** Untracked .env* files, relative to the repo root. */
+  envFiles: string[]
+  /** Folders with a node_modules next to a tracked package.json, relative to the repo root ('' is the root). */
+  nodeModules: string[]
+  /** The install command for the root package.json, or null when there is none. */
+  install: string | null
+}
+
+/** The end of <dataDir>/work/commands.log. */
+export interface WorkLogTail {
+  file: string
+  text: string
+  /** The file is longer than what is shown. */
+  truncated: boolean
+}
+
+export interface WorkResult {
+  ok: boolean
+  message?: string
 }

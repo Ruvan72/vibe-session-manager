@@ -16,7 +16,7 @@ import { readLiveSessions, type LiveInfo } from './live.ts'
 import { buildView, homeDirOf, titleOf, urgentQueue } from './model.ts'
 import { SeenStore } from './persist.ts'
 import { appendCustomTitle } from './rename.ts'
-import { RepoResolver } from './repo.ts'
+import { pathKey, RepoResolver } from './repo.ts'
 import { SearchIndex } from './search.ts'
 import { activityIntervals, TimeLog } from './timelog.ts'
 import { TranscriptReader } from './transcript.ts'
@@ -156,6 +156,14 @@ export class SessionStore extends EventEmitter<StoreEvents> {
 
   get(id: string): SessionView | undefined {
     return this.views.get(id)
+  }
+
+  /** The main-repo folders of sessions active since the given time, most recent first. */
+  recentRepoPaths(since: number): string[] {
+    const paths = this.snapshot()
+      .sessions.filter((s) => s.agent !== 'cowork' && s.lastActivity >= since)
+      .map((s) => this.repos.get(s.homeDir).repoPath)
+    return [...new Map(paths.map((p) => [pathKey(p), p])).values()]
   }
 
   urgent(): SessionView[] {

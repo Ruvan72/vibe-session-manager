@@ -1,6 +1,6 @@
 // Pure list logic for the renderer: filtering, grouping and time formatting.
 
-import type { DayFile, Interval, Light, SearchHit, SessionView, TimeEntry, UsageWindow } from '../../shared/types.ts'
+import type { DayFile, Interval, Light, SearchHit, SessionView, TimeEntry, UsageWindow, WorkItem, WorkJournalEntry, WorkState } from '../../shared/types.ts'
 
 export type Range = 'today' | '3d' | 'all'
 
@@ -283,4 +283,61 @@ export function dayCsv(day: DayFile): string {
     )
   }
   return lines.join('\r\n') + '\r\n'
+}
+
+export const WORK_STATE_LABEL: Record<WorkState, string> = {
+  orphaned: 'Folder gone',
+  working: 'Agent working',
+  uncommitted: 'Uncommitted',
+  new: 'New',
+  'pending-merge': 'Pending merge',
+  unpushed: 'To push',
+  ready: 'Ready for cleanup'
+}
+
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/** The line next to the state of a worktree or the repo's own folder: what is in it, and how far that has come. */
+export function workDetail(i: WorkItem): string {
+  const base = i.base ?? 'a base branch'
+  const notIn = i.ahead ? `${count(i.ahead, 'commit')} not in ${base}` : null
+  const changed = i.changed ? `${count(i.changed, 'file')} changed` : null
+  const push = !i.hasRemote || !i.branch ? null : i.toPush === null ? 'not pushed' : i.toPush > 0 ? `${count(i.toPush, 'commit')} to push` : 'pushed'
+  const join = (...parts: (string | null)[]) => parts.filter(Boolean).join(' · ')
+  switch (i.state) {
+    case 'orphaned':
+      return join('Git still has the worktree on record', notIn)
+    case 'working':
+      return join(changed, notIn) || 'A session is busy here'
+    case 'uncommitted':
+      // In the repo's own folder, commits waiting for a push are work too.
+      return join(changed, notIn, i.root && i.toPush ? `${count(i.toPush, 'commit')} to push` : null)
+    case 'new':
+      return `No commits yet · from ${base}`
+    case 'pending-merge':
+      return join(notIn ?? `Not in ${base}`, push)
+    case 'unpushed':
+      return `${count(i.toPush ?? 0, 'commit')} to push`
+    case 'ready':
+      return `Everything is in ${base}`
+  }
+}
+
+const AGENT_SHORT = { claude: 'Claude', codex: 'Codex' } as const
+
+/** One line of the Work tab's history. */
+export function workJournalText(e: WorkJournalEntry): string {
+  // The branch that was picked for the merge, which need not be the base.
+  const into = e.detail?.startsWith('into ') ? ` ${e.detail}` : e.base ? ` into ${e.base}` : ''
+  const text = {
+    create: [`Created ${e.worktree}${e.base ? ` from ${e.base}` : ''}`, `Could not create ${e.worktree}`],
+    install: [`Installed packages in ${e.worktree}`, `Install in ${e.worktree} failed`],
+    commit: [`${e.agent ? AGENT_SHORT[e.agent] : 'The agent'} committed in ${e.worktree}`, `Commit in ${e.worktree} did not finish`],
+    push: [`Pushed ${e.branch ?? e.worktree}`, `Could not push ${e.branch ?? e.worktree}`],
+    merge: [`Merged ${e.branch ?? e.worktree}${into}`, `Could not merge ${e.branch ?? e.worktree}${into}`],
+    cleanup: [`Removed ${e.worktree}`, `Could not remove ${e.worktree}`]
+  }[e.action][e.ok ? 0 : 1]
+  // "into main" and "to origin" are already in the sentence.
+  const extra = e.detail && !/^(into|to) /.test(e.detail) ? (e.action === 'create' ? `, ${e.detail}` : ` (${e.detail})`) : ''
+  return text + extra
 }

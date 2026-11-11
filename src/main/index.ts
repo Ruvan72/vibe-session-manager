@@ -1,7 +1,7 @@
 // Electron main process: tray, list window, global shortcuts, notifications, and IPC to the renderer.
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -36,10 +36,12 @@ import {
   SessionStore,
   UsageMonitor,
   uninstallHooks,
-  upgradeLegacyHooks
+  upgradeLegacyHooks,
+  windowsCommandLine,
+  WorkManager
 } from '../core/index.ts'
 import type { DebugActions, SettingsInfo } from '../shared/api.ts'
-import type { AppSettings, JumpResult, LabelIcon, SessionView, Snapshot } from '../shared/types.ts'
+import type { AppSettings, JumpResult, LabelIcon, SessionView, Snapshot, WorkAgent, WorkCreateOptions, WorkResult } from '../shared/types.ts'
 import { foregroundWindowTitle, titleShowsSession } from './foreground.ts'
 import { drawAppIcon, drawTrayIcon, SPINNER_FRAMES } from './icon.ts'
 
@@ -60,6 +62,7 @@ if (!process.env.VSM_DATA_DIR) adoptLegacyDataDir(LEGACY_DATA_DIR, dataDir)
 let settings: AppSettings = loadSettings(dataDir)
 let store: SessionStore
 let usage: UsageMonitor
+let work: WorkManager
 let tray: Tray | null = null
 let win: BrowserWindow | null = null
 let shortcutErrors: string[] = []
@@ -102,6 +105,13 @@ function start(): void {
     })
     usage = new UsageMonitor({ claudeDir, codexDir, fromApi: settings.usageFromApi, enabled: settings.showUsage })
     usage.on('change', (u) => win?.webContents.send('usage', u))
+    work = new WorkManager({
+      dataDir,
+      knownRepos: () => store.recentRepoPaths(Date.now() - WORK_REPO_DAYS * 86_400_000),
+      sessions: () => store.snapshot().sessions
+    })
+    work.on('run', (r) => win?.webContents.send('work-run', r))
+    work.on('changed', () => win?.webContents.send('work-changed'))
     store.on('change', onSnapshot)
     store.on('archive', (s) => win?.webContents.send('archive-status', s))
     store.on('waiting', (s) => notify(s, s.reason || 'Waiting for you'))
@@ -485,6 +495,101 @@ async function jumpUrgent(): Promise<void> {
   await jump(next.id)
 }
 
+// ---------- work ----------
+
+/** Repos with a session in this many days are offered on the Work tab, next to those a worktree was made in. */
+const WORK_REPO_DAYS = 30
+
+/** Runs a Work action; what goes wrong comes back as a message for the window to show. */
+async function workAction(fn: () => Promise<string | void>): Promise<WorkResult> {
+  try {
+    return { ok: true, message: (await fn()) || undefined }
+  } catch (e: any) {
+    return { ok: false, message: String(e?.message ?? e) }
+  }
+}
+
+/** Focuses the editor window that has the worktree's folder, or opens one. The command goes in the command log. */
+async function openWorktreeInEditor(dir: string): Promise<void> {
+  const target = editorTarget(dir, readEditorState(editorStorageFile()))
+  const started = Date.now()
+  work.log.action(`Open the editor on ${dir}`)
+  work.log.start(process.cwd(), windowsCommandLine(settings.editorCommand, target))
+  try {
+    await runEditorCli(settings.editorCommand, target)
+    work.log.end(0, Date.now() - started)
+  } catch (e: any) {
+    work.log.write(`${e?.message ?? e}\n`)
+    work.log.end(1, Date.now() - started)
+    throw e
+  }
+}
+
+function createWorktree(repoPath: string, name: string, raw: Partial<WorkCreateOptions> | undefined): Promise<WorkResult> {
+  return workAction(async () => {
+    const opts: WorkCreateOptions = { copyEnv: !!raw?.copyEnv, deps: raw?.deps === 'link' || raw?.deps === 'install' ? raw.deps : 'none' }
+    const item = await work.create(repoPath, name, opts)
+    const notes: string[] = []
+    // The install runs on while the editor opens; its output shows on the tab.
+    if (opts.deps === 'install') await work.install(item.key).catch((e) => notes.push(`Created ${item.name}, but the install did not start: ${e?.message ?? e}`))
+    try {
+      await openWorktreeInEditor(item.path)
+    } catch (e: any) {
+      notes.push(`Created ${item.name}, but could not run "${settings.editorCommand}": ${e?.message ?? e}`)
+    }
+    return notes.join(' ')
+  })
+}
+
+function mergeWorktree(key: string, into?: string): Promise<WorkResult> {
+  return workAction(async () => {
+    const plan = await work.mergePlan(key, into)
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Merge', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Merge',
+      message: `Merge ${plan.item.branch} into ${plan.into}?`,
+      detail: plan.target
+        ? `The merge runs in the folder that has ${plan.into} checked out:\n${plan.target}\n\nIf it has conflicts it is undone, and nothing changes.`
+        : `No folder has ${plan.into} checked out. If ${plan.into} has no commits of its own since, it is moved forward to ${plan.item.branch}. Otherwise the merge is made in a temporary checkout, which is removed again.\n\nIf it has conflicts it is undone, and nothing changes.`
+    })
+    if (response === 0) await work.merge(key, plan.into)
+  })
+}
+
+function cleanupWorktree(key: string): Promise<WorkResult> {
+  return workAction(async () => {
+    const plan = await work.cleanupPlan(key)
+    if (plan.blocked) throw new Error(plan.blocked)
+    const { item } = plan
+    const what = item.branch ? `worktree ${item.name} and branch ${item.branch}` : `worktree ${item.name}`
+    const risky = plan.losses.length > 0
+    const safe = item.state === 'orphaned' ? 'Its folder is already gone.' : `Everything in it is committed${item.base ? ` and in ${item.base}` : ''}.`
+    const { response } = await dialog.showMessageBox({
+      type: risky ? 'warning' : 'question',
+      buttons: [risky ? 'Delete anyway' : 'Clean up', 'Cancel'],
+      // With something to lose, Enter must not be the one that deletes.
+      defaultId: risky ? 1 : 0,
+      cancelId: 1,
+      title: 'Clean up',
+      message: risky ? `Delete ${what}? Work will be lost.` : `Remove ${what}?`,
+      detail: [...plan.losses, ...plan.notes, risky ? '' : safe, `Folder: ${item.path}`].filter(Boolean).join('\n')
+    })
+    if (response !== 0) return
+    return work.cleanup(key, risky)
+  })
+}
+
+async function pickWorkRepo(): Promise<(WorkResult & { path: string }) | null> {
+  const res = await dialog.showOpenDialog({ title: 'Pick the root folder of a git repo', properties: ['openDirectory'] })
+  const dir = res.filePaths[0]
+  if (res.canceled || !dir) return null
+  const problem = work.addRepo(dir)
+  return { ok: !problem, message: problem ?? undefined, path: dir }
+}
+
 // ---------- shortcuts ----------
 
 function registerShortcuts(): void {
@@ -640,6 +745,34 @@ function registerIpc(): void {
   ipcMain.handle('archive-folder', async () => {
     mkdirSync(store.archive.dir, { recursive: true })
     await shell.openPath(store.archive.dir)
+  })
+  ipcMain.handle('work-get', (_e, opts?: { fetch?: boolean }) => work.overview({ fetch: !!opts?.fetch }))
+  ipcMain.handle('work-create', (_e, repoPath: string, name: string, opts?: Partial<WorkCreateOptions>) => createWorktree(String(repoPath), String(name), opts))
+  ipcMain.handle('work-setup', (_e, repoPath: string) => work.setupInfo(String(repoPath)))
+  ipcMain.handle('work-pick-repo', () => pickWorkRepo())
+  ipcMain.handle('work-open', (_e, key: string) =>
+    workAction(async () => {
+      const item = (await work.overview()).items.find((i) => i.key === key)
+      if (!item || item.state === 'orphaned') throw new Error('The folder of this worktree is gone.')
+      await openWorktreeInEditor(item.path)
+    })
+  )
+  ipcMain.handle('work-commit', (_e, key: string, agent: WorkAgent) => workAction(() => work.commit(String(key), agent)))
+  ipcMain.handle('work-push', (_e, key: string) => workAction(() => work.push(String(key))))
+  ipcMain.handle('work-merge', (_e, key: string, into?: string) => mergeWorktree(String(key), typeof into === 'string' && into ? into : undefined))
+  ipcMain.handle('work-cleanup', (_e, key: string) => cleanupWorktree(String(key)))
+  ipcMain.handle('work-stop', () => work.stop())
+  ipcMain.handle('work-dismiss', () => work.dismissRun())
+  ipcMain.handle('work-set-agent', (_e, agent: WorkAgent) => {
+    if (agent === 'claude' || agent === 'codex') work.setAgent(agent)
+  })
+  ipcMain.handle('work-journal', async () => {
+    if (existsSync(work.journalFile)) shell.showItemInFolder(work.journalFile)
+    else await shell.openPath(dataDir)
+  })
+  ipcMain.handle('work-log', () => ({ file: work.log.file, ...work.log.tail() }))
+  ipcMain.handle('work-log-open', async () => {
+    if (existsSync(work.log.file)) await shell.openPath(work.log.file)
   })
   // A conversation can hold any link; only web links go to the browser.
   ipcMain.handle('open-link', async (_e, url: string) => {
