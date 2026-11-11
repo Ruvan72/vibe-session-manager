@@ -274,6 +274,13 @@ export interface WorkItem {
   /** Locked with `git worktree lock`. */
   locked: boolean
   lastCommitAt: number | null
+  /** The open pull request for its branch, as far as the app knows: one it made, or one the last refresh found. */
+  pr: WorkPr | null
+}
+
+export interface WorkPr {
+  number: number
+  url: string
 }
 
 export interface WorkRepo {
@@ -290,7 +297,7 @@ export interface WorkRun {
   id: number
   /** The WorkItem it works on. */
   key: string
-  kind: 'commit' | 'push' | 'merge' | 'install'
+  kind: 'commit' | 'push' | 'merge' | 'install' | 'pr'
   title: string
   agent: WorkAgent | null
   text: string
@@ -301,7 +308,7 @@ export interface WorkRun {
 export interface WorkJournalEntry {
   /** ISO time. */
   at: string
-  action: 'create' | 'install' | 'commit' | 'push' | 'merge' | 'cleanup'
+  action: 'create' | 'install' | 'commit' | 'push' | 'merge' | 'pr' | 'cleanup'
   repo: string
   repoPath: string
   worktree: string
@@ -310,6 +317,8 @@ export interface WorkJournalEntry {
   agent?: WorkAgent
   ok: boolean
   detail?: string
+  /** The pull request that was opened. */
+  url?: string
 }
 
 export interface WorkOverview {
@@ -317,6 +326,8 @@ export interface WorkOverview {
   agents: WorkAgent[]
   /** The agent the user picked last, if it is still installed. */
   agent: WorkAgent | null
+  /** The GitHub CLI is installed, which is what makes pull requests. */
+  gh: boolean
   repos: WorkRepo[]
   /** The repo a worktree was last created in. */
   lastRepo: string | null

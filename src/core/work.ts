@@ -9,13 +9,15 @@ import { appendFileSync, closeSync, constants, copyFileSync, existsSync, lstatSy
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import type { LiveStatus, WorkAgent, WorkCreateOptions, WorkItem, WorkJournalEntry, WorkOverview, WorkRepo, WorkRun, WorkSetupInfo, WorkState } from '../shared/types.ts'
+import type { LiveStatus, WorkAgent, WorkCreateOptions, WorkItem, WorkJournalEntry, WorkOverview, WorkPr, WorkRepo, WorkRun, WorkSetupInfo, WorkState } from '../shared/types.ts'
 import { writeJson } from './persist.ts'
 import { pathKey } from './repo.ts'
 
 const execFileAsync = promisify(execFile)
 
 const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+/** The GitHub CLI must never stop to ask: there is no terminal to answer in. */
+const GH_ENV = { ...GIT_ENV, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' }
 
 /** Where commands are written down as they are run, with what they printed. */
 export interface CommandLog {
@@ -46,6 +48,17 @@ async function tryGit(cwd: string, args: string[], timeout?: number, log?: Comma
   } catch {
     return null
   }
+}
+
+/** Runs a program that is not git and returns what it printed, or null when it fails. With a log, it is written there. */
+function tryRun(cwd: string, bin: string, args: string[], timeout = 30_000, log?: CommandLog): Promise<string | null> {
+  const started = Date.now()
+  return new Promise((resolve) => {
+    execFile(bin, args, { cwd, windowsHide: true, timeout, maxBuffer: 32 * 1024 * 1024, env: GH_ENV }, (err, stdout, stderr) => {
+      log?.command(cwd, [bin, ...args].join(' '), stdout + stderr, err ? (typeof err.code === 'number' ? err.code : -1) : 0, Date.now() - started)
+      resolve(err ? null : stdout)
+    })
+  })
 }
 
 const LOG_MAX_BYTES = 5 * 1024 * 1024
@@ -370,6 +383,10 @@ export interface WorkDeps {
   detectAgents?(): Promise<WorkAgent[]>
   /** The command line for a commit; default runs the agent's CLI. */
   agentCommand?(agent: WorkAgent, repoPath: string): string
+  /** Whether the GitHub CLI is installed; default looks on PATH. */
+  detectGh?(): Promise<boolean>
+  /** The program and arguments that run the GitHub CLI with these arguments; default is `gh` itself. */
+  ghCommand?(args: string[]): string[]
 }
 
 interface WorkFile {
@@ -405,6 +422,22 @@ export interface MergePlan {
   into: string
   /** The checkout that has that branch, where the merge runs; null when no folder has it checked out. */
   target: string | null
+}
+
+export interface PrPlan {
+  item: WorkItem
+  /** The branch the pull request asks to merge into. */
+  base: string
+  remote: string
+  /** The remote does not have the branch as it is here, so it is pushed first. */
+  push: boolean
+}
+
+/** The last pull request link in what the GitHub CLI printed: the one it made, or the one that was there already. */
+export function prInText(text: string): WorkPr | null {
+  const all = [...text.matchAll(/https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+\/pull\/(\d+)/g)]
+  const last = all[all.length - 1]
+  return last ? { number: Number(last[1]), url: last[0] } : null
 }
 
 const MAX_RUN_TEXT = 400_000
@@ -453,6 +486,9 @@ export class WorkManager extends EventEmitter<WorkEvents> {
   private scans = new Map<string, RepoScan>()
   /** "<repo key>|<branch>" → the branch the reflog says it was made from, or null; it does not change. */
   private origins = new Map<string, string | null>()
+  private gh: { at: number; ok: boolean } | null = null
+  /** "<repo key>|<branch>" → its open pull request: one made here, or one the last refresh found. Not kept between runs of the app. */
+  private prs = new Map<string, WorkPr>()
 
   constructor(deps: WorkDeps) {
     super()
@@ -495,7 +531,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     } catch {}
   }
 
-  private journalOf(item: WorkItem, action: WorkJournalEntry['action'], ok: boolean, extra: { agent?: WorkAgent; detail?: string } = {}): void {
+  private journalOf(item: WorkItem, action: WorkJournalEntry['action'], ok: boolean, extra: { agent?: WorkAgent; detail?: string; url?: string } = {}): void {
     this.journal({ action, repo: item.repo, repoPath: item.repoPath, worktree: item.name, branch: item.branch, base: item.base, ok, ...extra })
   }
 
@@ -519,6 +555,34 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     const list = this.deps.detectAgents ? await this.deps.detectAgents() : (await Promise.all((['claude', 'codex'] as const).map(async (a) => ((await onPath(AGENT_BIN[a])) ? [a] : [])))).flat()
     this.agents = { at: Date.now(), list }
     return list
+  }
+
+  private async hasGh(): Promise<boolean> {
+    if (this.gh && Date.now() - this.gh.at < 60_000) return this.gh.ok
+    this.gh = { at: Date.now(), ok: this.deps.detectGh ? await this.deps.detectGh() : await onPath('gh') }
+    return this.gh.ok
+  }
+
+  private ghArgv(args: string[]): string[] {
+    return this.deps.ghCommand ? this.deps.ghCommand(args) : ['gh', ...args]
+  }
+
+  /** Asks GitHub for the repo's open pull requests. What was known stays when that fails, as it does for a repo that is not on GitHub. */
+  private async readPrs(repoPath: string): Promise<void> {
+    const [bin, ...args] = this.ghArgv(['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,url,headRefName'])
+    const out = await tryRun(repoPath, bin, args, 30_000, this.log)
+    let list: unknown
+    try {
+      list = JSON.parse(out ?? '')
+    } catch {
+      return
+    }
+    if (!Array.isArray(list)) return
+    const prefix = `${pathKey(repoPath)}|`
+    for (const k of [...this.prs.keys()]) if (k.startsWith(prefix)) this.prs.delete(k)
+    for (const p of list) {
+      if (typeof p?.headRefName === 'string' && Number.isInteger(p.number) && /^https:\/\//.test(String(p.url))) this.prs.set(prefix + p.headRefName, { number: p.number, url: p.url })
+    }
   }
 
   setAgent(agent: WorkAgent): void {
@@ -658,7 +722,8 @@ export class WorkManager extends EventEmitter<WorkEvents> {
         toPush: status?.toPush ?? null,
         hasRemote: !!remote,
         sessionOpen: here.some((s) => s.status !== 'closed'),
-        lastCommitAt: (branch && refs.get(`refs/heads/${branch}`)?.at) || null
+        lastCommitAt: (branch && refs.get(`refs/heads/${branch}`)?.at) || null,
+        pr: (branch && this.prs.get(`${pathKey(repoPath)}|${branch}`)) || null
       }
     }
     const [root, ...items] = await Promise.all([own ? read(own, true) : null, ...linked.map((w) => read(w, false))])
@@ -686,9 +751,13 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     if (opts.fetch) {
       await this.scanAll()
       const withRemote = [...this.scans.values()].filter((s) => s.remote && s.items.length)
-      if (withRemote.length) this.log.action('Refresh: fetch from the remotes')
+      const gh = withRemote.length > 0 && (await this.hasGh())
+      if (withRemote.length) this.log.action(`Refresh: fetch from the remotes${gh ? ' and read the open pull requests' : ''}`)
       // One at a time, so their output does not mix in the log.
-      for (const s of withRemote) await this.tryAct(s.repo.path, ['fetch', '--prune', s.remote!], 30_000)
+      for (const s of withRemote) {
+        await this.tryAct(s.repo.path, ['fetch', '--prune', s.remote!], 30_000)
+        if (gh) await this.readPrs(s.repo.path)
+      }
     }
     await this.scanAll()
     const agents = await this.installedAgents()
@@ -697,6 +766,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     return {
       agents,
       agent: this.state.agent && agents.includes(this.state.agent) ? this.state.agent : (agents[0] ?? null),
+      gh: await this.hasGh(),
       repos: scans.map((s) => s.repo),
       lastRepo,
       items: scans.flatMap((s) => s.items),
@@ -983,6 +1053,47 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     })
   }
 
+  async prPlan(key: string): Promise<PrPlan> {
+    const { item, scan } = await this.fresh(key)
+    if (!(await this.hasGh())) throw new Error('Pull requests are made with the GitHub CLI (gh), which was not found on this machine.')
+    if (!item.branch) throw new Error('This worktree is not on a branch.')
+    if (!scan.remote) throw new Error('This repo has no remote to open a pull request on.')
+    if (!item.base) throw new Error('There is no base branch to open the pull request into.')
+    if (item.state === 'working') throw new Error('An agent is working in this worktree. Let it finish first.')
+    if (item.changed) throw new Error('Commit the work first; it has uncommitted files.')
+    if (!item.ahead) throw new Error(`${item.branch} has no commits that are not in ${item.base}.`)
+    if ((await tryGit(item.repoPath, ['rev-parse', '-q', '--verify', `refs/remotes/${scan.remote}/${item.base}`])) === null) throw new Error(`${item.base} is not on ${scan.remote}, so there is nothing there to open the pull request into.`)
+    return { item, base: item.base, remote: scan.remote, push: item.toPush !== 0 }
+  }
+
+  /**
+   * Opens a pull request for the branch into its base with the GitHub CLI, after pushing the branch when
+   * the remote does not have it as it is here. The title and the description come from the commits.
+   */
+  async pr(key: string): Promise<void> {
+    const plan = await this.prPlan(key)
+    const { item, base, remote } = plan
+    const branch = item.branch!
+    const run = this.startRun(item, 'pr', `Pull request for ${branch} into ${base}`, null)
+    this.log.action(`Open a pull request for ${branch} into ${base} (${item.repo})`)
+    void (async () => {
+      let code = plan.push ? await this.gitStream(run, item.repoPath, ['push', '-u', remote, branch]) : 0
+      let made: WorkPr | null = null
+      if (code === 0 && run.status === 'running') {
+        const [bin, ...args] = this.ghArgv(['pr', 'create', '--base', base, '--head', branch, '--fill'])
+        const line = [bin, ...args].join(' ')
+        this.say(run, `$ ${line}\n`)
+        const from = run.text.length
+        code = await this.stream(run, spawn(bin, args, { cwd: item.path, windowsHide: true, env: GH_ENV, stdio: ['ignore', 'pipe', 'pipe'] }), item.path, line)
+        // Also when it failed because the branch has one already: the link to that one is in what it said.
+        made = prInText(run.text.slice(from))
+        if (made) this.prs.set(`${pathKey(item.repoPath)}|${branch}`, made)
+      }
+      this.journalOf(item, 'pr', code === 0, { detail: `into ${base}`, url: made?.url })
+      this.endRun(run, code === 0 ? 'ok' : 'failed')
+    })()
+  }
+
   async mergePlan(key: string, into?: string): Promise<MergePlan> {
     const { item, scan } = await this.fresh(key)
     if (!item.branch) throw new Error('This worktree is not on a branch.')
@@ -1088,6 +1199,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       }
       delete this.state.bases[`${pathKey(item.repoPath)}|${item.branch}`]
       this.origins.delete(`${pathKey(item.repoPath)}|${item.branch}`)
+      this.prs.delete(`${pathKey(item.repoPath)}|${item.branch}`)
       this.save()
     }
     await this.tryAct(item.repoPath, ['worktree', 'prune'])

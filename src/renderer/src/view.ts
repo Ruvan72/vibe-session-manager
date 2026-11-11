@@ -315,7 +315,7 @@ export function workDetail(i: WorkItem): string {
     case 'new':
       return `No commits yet · from ${base}`
     case 'pending-merge':
-      return join(notIn ?? `Not in ${base}`, push)
+      return join(notIn ?? `Not in ${base}`, push, i.pr ? `pull request #${i.pr.number} open` : null)
     case 'unpushed':
       return `${count(i.toPush ?? 0, 'commit')} to push`
     case 'ready':
@@ -335,6 +335,7 @@ export function workJournalText(e: WorkJournalEntry): string {
     commit: [`${e.agent ? AGENT_SHORT[e.agent] : 'The agent'} committed in ${e.worktree}`, `Commit in ${e.worktree} did not finish`],
     push: [`Pushed ${e.branch ?? e.worktree}`, `Could not push ${e.branch ?? e.worktree}`],
     merge: [`Merged ${e.branch ?? e.worktree}${into}`, `Could not merge ${e.branch ?? e.worktree}${into}`],
+    pr: [`Opened a pull request for ${e.branch ?? e.worktree}${into}`, `Could not open a pull request for ${e.branch ?? e.worktree}${into}`],
     cleanup: [`Removed ${e.worktree}`, `Could not remove ${e.worktree}`]
   }[e.action][e.ok ? 0 : 1]
   // "into main" and "to origin" are already in the sentence.

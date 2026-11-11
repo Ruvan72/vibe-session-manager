@@ -185,11 +185,12 @@ The buttons on a worktree:
 - **Commit work** runs the agent picked at the top (Claude Code or Codex, whichever is installed) in the worktree, without a window. It is asked to look at the changes, stage what belongs to the work and commit it in the style of the repo, and not to push or change files. What it says and runs shows as it happens, and **Stop** ends it. Claude Code gets permission for `git status`, `diff`, `log`, `show`, `add` and `commit` and for reading files, on top of what your own Claude Code settings allow. The run is an ordinary session of that agent, so it uses your plan and shows on the Sessions tab.
 - **Push** runs `git push -u` to the repo's remote.
 - **Merge into …** asks first, then merges the worktree's branch. The button names the base branch; the arrow next to it lists the repo's other local branches (DEV, master, …), so the same work can go into more than one. A worktree that is already in its base only has **Merge into…** with the list. Where the chosen branch is checked out in a folder, the merge runs there. Where it is not, the branch is moved forward if it has no commits of its own, and otherwise the merge is made in a temporary checkout that is removed again. A merge with conflicts is undone, and you merge by hand. The state in the list keeps following the base branch. Branches that only exist on the remote are not listed; check them out once to merge into them.
+- **Create PR** asks first, then opens a pull request for the branch into its base branch with the GitHub CLI (`gh pr create --fill`), so the title and description come from the commits. If the remote does not have the branch as it is here, it is pushed first. The button is there when the branch has commits that are not in its base and the repo has a remote; it needs `gh` installed and signed in, and the base branch on the remote. Afterwards the row says the pull request is open and the button becomes **Open PR #…**, which opens it in the browser. The refresh button also asks GitHub for the repo's open pull requests, so one made elsewhere shows too. The app does not remember them between runs; refresh to see them again. When the pull request is merged on GitHub, a refresh turns the worktree to **Ready for cleanup**.
 - **Clean up** asks first, then removes the worktree and deletes its branch. If that would lose uncommitted files or commits that are not merged, it says exactly what, and deletes only if you choose **Delete anyway**. A branch on the remote is left alone.
 
-After a commit, the push, merge and cleanup buttons are also in the header of the output.
+After a commit, the push, pull request, merge and cleanup buttons are also in the header of the output.
 
-**History** at the bottom lists what the tab has done. **Command log** shows every command the tab ran, exactly as it was run, with all its output and exit code: git commands, the agent's command line with the prompt it was given and its raw output, the install, the editor command, and each file that was copied or linked. **Open file** opens the whole log, and **Copy** takes what is shown. Reading where the worktrees stand, which happens every 20 seconds while the tab is open, is the one thing that is not logged. When the log passes 5 MB it is renamed to `commands.1.log` and a new one starts.
+**History** at the bottom lists what the tab has done. **Command log** shows every command the tab ran, exactly as it was run, with all its output and exit code: git commands, the GitHub CLI's, the agent's command line with the prompt it was given and its raw output, the install, the editor command, and each file that was copied or linked. **Open file** opens the whole log, and **Copy** takes what is shown. Reading where the worktrees stand, which happens every 20 seconds while the tab is open, is the one thing that is not logged. When the log passes 5 MB it is renamed to `commands.1.log` and a new one starts.
 
 ## Time tracking
 
@@ -210,7 +211,7 @@ Everything lives in `~/.vibe-session-manager/`:
 | `window.json` | Window position and size |
 | `archive/` | Copies of your conversations (only if you turned on the archive) |
 | `work.json` | The Work tab's repos, chosen agent and the base branch of each worktree it created |
-| `work/journal.jsonl` | What the Work tab did: one line per create, commit, push, merge and cleanup |
+| `work/journal.jsonl` | What the Work tab did: one line per create, commit, push, pull request, merge and cleanup |
 | `work/commands.log` | Every command the Work tab ran, with its output |
 | `hook.cjs`, `events.jsonl` | The Claude Code hook and the events it records (only if hooks are installed) |
 

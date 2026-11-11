@@ -50,6 +50,7 @@ const api: Api = {
   commitWork: (key, agent) => ipcRenderer.invoke('work-commit', key, agent),
   pushWork: (key) => ipcRenderer.invoke('work-push', key),
   mergeWork: (key, into) => ipcRenderer.invoke('work-merge', key, into),
+  prWork: (key) => ipcRenderer.invoke('work-pr', key),
   cleanupWork: (key) => ipcRenderer.invoke('work-cleanup', key),
   stopWork: () => ipcRenderer.invoke('work-stop'),
   dismissWorkRun: () => ipcRenderer.invoke('work-dismiss'),
