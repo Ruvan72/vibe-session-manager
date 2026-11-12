@@ -1,10 +1,13 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { agentCommand, claudeStreamText, createdFrom, installCommand, parseStatus, parseWorktreeList, prInText, rootState, unlinkNodeModules, WorkManager, workState, worktreeNameError } from '../../src/core/work.ts'
 import type { LiveStatus, WorkRun } from '../../src/shared/types.ts'
 import { tmpDir } from './helpers.ts'
+
+// These run real git many times; on Windows CI runners that takes longer than the 5 s default.
+vi.setConfig({ testTimeout: 30_000 })
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim()
 
