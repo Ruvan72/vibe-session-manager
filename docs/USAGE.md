@@ -190,7 +190,7 @@ The buttons on a worktree:
 
 After a commit, the push, pull request, merge and cleanup buttons are also in the header of the output.
 
-**History** at the bottom lists what the tab has done. **Command log** shows every command the tab ran, exactly as it was run, with all its output and exit code: git commands, the GitHub CLI's, the agent's command line with the prompt it was given and its raw output, the install, the editor command, and each file that was copied or linked. **Open file** opens the whole log, and **Copy** takes what is shown. Reading where the worktrees stand, which happens every 20 seconds while the tab is open, is the one thing that is not logged. When the log passes 5 MB it is renamed to `commands.1.log` and a new one starts.
+**History** at the bottom lists what the tab has done. **Command log** shows every command the tab ran, exactly as it was run, with all its output and exit code: git commands, the GitHub CLI's, the agent's command line with the prompt it was given and its raw output, the install, the editor command, and each file that was copied or linked. **Open file** opens the whole log, and **Copy** takes what is shown. **Log** on a row shows only what was run for that worktree, and **Log** next to a line of the history shows only what that one action ran, also after the worktree is gone; **Show all** goes back to the whole log. What was run before the app had this is only in the whole log. Reading where the worktrees stand, which happens every 20 seconds while the tab is open, is the one thing that is not logged. When the log passes 5 MB it is renamed to `commands.1.log` and a new one starts.
 
 ## Time tracking
 

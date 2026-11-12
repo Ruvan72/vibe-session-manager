@@ -5,7 +5,7 @@
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { appendFileSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
+import { appendFileSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -62,6 +62,25 @@ function tryRun(cwd: string, bin: string, args: string[], timeout = 30_000, log?
 }
 
 const LOG_MAX_BYTES = 5 * 1024 * 1024
+const LOG_HEADING = /^===== (\d{4}-\d\d-\d\dT[\d:.]+Z)  .* =====$/
+
+/** One action in the command log: a heading and the commands under it. */
+export interface LogSection {
+  /** The time in its heading, which is what the history knows it by. */
+  id: string
+  title: string
+  /** The folder of the worktree it was for. */
+  worktree?: string
+}
+
+/** A folder as the disk has it, so the short and the long form of a path on Windows are the same folder. */
+function folderKey(p: string): string {
+  try {
+    return pathKey(realpathSync.native(p))
+  } catch {
+    return pathKey(p)
+  }
+}
 
 /**
  * The exact commands the Work tab ran and everything they printed, appended to one text file as it happens.
@@ -71,6 +90,8 @@ const LOG_MAX_BYTES = 5 * 1024 * 1024
 export class WorkLog implements CommandLog {
   readonly file: string
   private midLine = false
+  /** The action the file's last heading is for. */
+  private at: LogSection | null = null
 
   constructor(file: string) {
     this.file = file
@@ -90,13 +111,36 @@ export class WorkLog implements CommandLog {
     this.write(`${this.midLine ? '\n' : ''}${text}\n`)
   }
 
-  /** A heading for what the user asked for; the commands under it belong to it. */
-  action(title: string): void {
+  private get older(): string {
+    return this.file.replace(/\.log$/, '.1.log')
+  }
+
+  private heading(s: LogSection, again: boolean): void {
+    this.line(`\n===== ${again ? `${new Date().toISOString()}  ${s.title}, continued from ${s.id}` : `${s.id}  ${s.title}`} =====`)
+    if (s.worktree) this.line(`[worktree ${s.worktree}]`)
+    this.at = s
+  }
+
+  /**
+   * A heading for what the user asked for; the commands under it belong to it. With the folder of the
+   * worktree it is for, it can be found again as that worktree's.
+   */
+  action(title: string, worktree?: string): LogSection {
     // One older file is kept when this one gets big.
     try {
-      if (statSync(this.file).size > LOG_MAX_BYTES) renameSync(this.file, this.file.replace(/\.log$/, '.1.log'))
+      if (statSync(this.file).size > LOG_MAX_BYTES) renameSync(this.file, this.older)
     } catch {}
-    this.line(`\n===== ${new Date().toISOString()}  ${title} =====`)
+    const s: LogSection = { id: new Date().toISOString(), title, worktree }
+    this.heading(s, false)
+    return s
+  }
+
+  /**
+   * Called before more is written for an action that takes a while. When another action was logged in the
+   * meantime, the heading is written again, so what follows is not read as part of the other one.
+   */
+  resume(s: LogSection): void {
+    if (this.at !== s) this.heading(s, true)
   }
 
   /** A command that starts now; what it prints follows through write(), then end(). */
@@ -136,6 +180,35 @@ export class WorkLog implements CommandLog {
     } catch {
       return { text: '', truncated: false }
     }
+  }
+
+  /**
+   * The actions that were for one worktree, or the one action with this id, oldest first. The older file
+   * is read too. Actions logged before the log said which worktree they were for are not found.
+   */
+  of(want: { worktree?: string; id?: string }, maxBytes = 200_000): { text: string; truncated: boolean } {
+    let all = ''
+    for (const file of [this.older, this.file]) {
+      try {
+        all += readFileSync(file, 'utf8') + '\n'
+      } catch {}
+    }
+    const key = want.worktree ? folderKey(want.worktree) : null
+    const keys = new Map<string, string>()
+    const mine = all.split(/\n(?====== \d{4}-\d\d-\d\dT)/).filter((part) => {
+      const [head, tag = ''] = part.split('\n', 2)
+      const stamp = LOG_HEADING.exec(head)?.[1]
+      if (!stamp) return false
+      if (want.id) return (/, continued from (\S+) =====$/.exec(head)?.[1] ?? stamp) === want.id
+      const dir = /^\[worktree (.+)\]$/.exec(tag)?.[1]
+      if (!key || !dir) return false
+      if (!keys.has(dir)) keys.set(dir, folderKey(dir))
+      return keys.get(dir) === key
+    })
+    const text = mine.map((part) => part.trimEnd()).join('\n\n')
+    if (text.length <= maxBytes) return { text: text && text + '\n', truncated: false }
+    const end = text.slice(-maxBytes)
+    return { text: end.slice(end.indexOf('\n') + 1) + '\n', truncated: true }
   }
 }
 
@@ -489,6 +562,8 @@ export class WorkManager extends EventEmitter<WorkEvents> {
   private gh: { at: number; ok: boolean } | null = null
   /** "<repo key>|<branch>" → its open pull request: one made here, or one the last refresh found. Not kept between runs of the app. */
   private prs = new Map<string, WorkPr>()
+  /** Where each run is in the command log. */
+  private sections = new WeakMap<WorkRun, LogSection>()
 
   constructor(deps: WorkDeps) {
     super()
@@ -531,7 +606,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     } catch {}
   }
 
-  private journalOf(item: WorkItem, action: WorkJournalEntry['action'], ok: boolean, extra: { agent?: WorkAgent; detail?: string; url?: string } = {}): void {
+  private journalOf(item: WorkItem, action: WorkJournalEntry['action'], ok: boolean, extra: { agent?: WorkAgent; detail?: string; url?: string; log?: string } = {}): void {
     this.journal({ action, repo: item.repo, repoPath: item.repoPath, worktree: item.name, branch: item.branch, base: item.base, ok, ...extra })
   }
 
@@ -853,12 +928,11 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     if (item.state === 'orphaned') throw new Error('The folder of this worktree is gone.')
     const command = installCommand(item.path)
     if (!command) throw new Error('There is no package.json in the root of this worktree.')
-    const run = this.startRun(item, 'install', `${command} in ${item.name}`, null)
-    this.log.action(`${command} in ${item.name} (${item.repo})`)
+    const run = this.startRun(item, 'install', `${command} in ${item.name}`, null, `${command} in ${item.name} (${item.repo})`)
     this.say(run, `$ ${command}\n`)
     const child = spawn(command, { cwd: item.path, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     void this.stream(run, child, item.path, command).then((code) => {
-      this.journalOf(item, 'install', code === 0, { detail: command })
+      this.journalOf(item, 'install', code === 0, { detail: command, log: this.sections.get(run)?.id })
       this.endRun(run, code === 0 ? 'ok' : 'failed')
     })
   }
@@ -870,7 +944,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     if (!isRepoRoot(repoPath)) throw new Error('That folder is not the root of a git repo.')
     const dir = path.join(repoPath, '.claude', 'worktrees', name)
     if (existsSync(dir)) throw new Error(`There is already a folder at .claude/worktrees/${name}.`)
-    this.log.action(`Create worktree ${name} in ${repoPath}`)
+    const section = this.log.action(`Create worktree ${name} in ${repoPath}`, dir)
     if ((await this.tryAct(repoPath, ['rev-parse', '-q', '--verify', `refs/heads/${name}`])) !== null) throw new Error(`There is already a branch named ${name}.`)
     const base = (await this.tryAct(repoPath, ['branch', '--show-current']))?.trim() || null
     await this.excludeWorktrees(repoPath)
@@ -885,7 +959,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     }
     this.state.setup = { copyEnv: !!opts.copyEnv, deps: opts.deps }
     this.rememberRepo(repoPath)
-    this.journal({ action: 'create', repo: path.basename(repoPath), repoPath, worktree: name, branch: name, base, ok: true, detail: brought.join(', ') || undefined })
+    this.journal({ action: 'create', repo: path.basename(repoPath), repoPath, worktree: name, branch: name, base, ok: true, detail: brought.join(', ') || undefined, log: section.id })
     const scan = await this.scanRepo(repoPath)
     if (scan) this.scans.set(pathKey(repoPath), scan)
     const item = scan?.items.find((i) => i.branch === name)
@@ -908,9 +982,11 @@ export class WorkManager extends EventEmitter<WorkEvents> {
 
   // ---------- runs: commit, push, merge ----------
 
-  private startRun(item: WorkItem, kind: WorkRun['kind'], title: string, agent: WorkAgent | null): WorkRun {
+  /** Starts a run, with a heading for it in the command log. */
+  private startRun(item: WorkItem, kind: WorkRun['kind'], title: string, agent: WorkAgent | null, logTitle: string): WorkRun {
     if (this.run?.status === 'running') throw new Error('Something is still running. Wait for it, or stop it.')
     this.run = { id: ++this.runSeq, key: item.key, kind, title, agent, text: '', status: 'running' }
+    this.sections.set(this.run, this.log.action(logTitle, item.path))
     this.emit('run', this.run)
     return this.run
   }
@@ -942,7 +1018,11 @@ export class WorkManager extends EventEmitter<WorkEvents> {
   private stream(run: WorkRun, child: ChildProcess, cwd: string, line: string, opts: { onLine?: (line: string) => string; stdin?: string } = {}): Promise<number> {
     const { onLine } = opts
     const started = Date.now()
+    // Something else may be logged while this prints; what it prints then goes under its own heading again.
+    const section = this.sections.get(run)
+    const mine = () => section && this.log.resume(section)
     this.child = child
+    mine()
     this.log.start(cwd, line)
     if (opts.stdin) this.log.write(`[stdin]\n${opts.stdin}\n[end of stdin]\n`)
     return new Promise((resolve) => {
@@ -950,6 +1030,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       const end = (code: number) => {
         if (ended) return
         ended = true
+        mine()
         this.log.end(code, Date.now() - started)
         resolve(code)
       }
@@ -957,6 +1038,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
         let rest = ''
         stream?.setEncoding('utf8')
         stream?.on('data', (d: string) => {
+          mine()
           this.log.write(d)
           if (!lines || !onLine) return this.say(run, d)
           rest += d
@@ -969,6 +1051,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       feed(child.stdout, true)
       feed(child.stderr, false)
       child.on('error', (e) => {
+        mine()
         this.log.note(`could not start: ${e.message}`)
         this.say(run, `${e.message}\n`)
         end(-1)
@@ -1012,9 +1095,8 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     if (item.state === 'orphaned') throw new Error('The folder of this worktree is gone.')
     if (!item.changed) throw new Error('There is nothing to commit.')
     if (!(await this.installedAgents()).includes(agent)) throw new Error(`${AGENT_NAME[agent]} is not installed on this machine.`)
-    const run = this.startRun(item, 'commit', `${AGENT_NAME[agent]} commits ${item.name}`, agent)
+    const run = this.startRun(item, 'commit', `${AGENT_NAME[agent]} commits ${item.name}`, agent, `Commit work in ${item.name} (${item.repo}) with ${AGENT_NAME[agent]}`)
     this.setAgent(agent)
-    this.log.action(`Commit work in ${item.name} (${item.repo}) with ${AGENT_NAME[agent]}`)
     const command = (this.deps.agentCommand ?? agentCommand)(agent, item.repoPath)
     const child = spawn(command, { cwd: item.path, shell: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     child.stdin?.on('error', () => {})
@@ -1036,7 +1118,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       const ok = code === 0 && !agentError
       if (!ok && run.status === 'running') this.say(run, `\n${AGENT_NAME[agent]} ended with an error${code > 0 ? ` (exit code ${code})` : ''}.\n`)
       else if (after?.item.changed) this.say(run, `\n${plural(after.item.changed, 'file')} still uncommitted.\n`)
-      this.journalOf(after?.item ?? item, 'commit', ok, { agent, detail: !ok ? (run.status === 'stopped' ? 'stopped' : 'the agent failed') : after?.item.changed ? 'some files left uncommitted' : undefined })
+      this.journalOf(after?.item ?? item, 'commit', ok, { agent, log: this.sections.get(run)?.id, detail: !ok ? (run.status === 'stopped' ? 'stopped' : 'the agent failed') : after?.item.changed ? 'some files left uncommitted' : undefined })
       this.endRun(run, ok ? 'ok' : 'failed')
     })
   }
@@ -1045,10 +1127,9 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     const { item, scan } = await this.fresh(key)
     if (!item.branch) throw new Error('This worktree is not on a branch.')
     if (!scan.remote) throw new Error('This repo has no remote to push to.')
-    const run = this.startRun(item, 'push', `Push ${item.branch}`, null)
-    this.log.action(`Push ${item.branch} (${item.repo}) to ${scan.remote}`)
+    const run = this.startRun(item, 'push', `Push ${item.branch}`, null, `Push ${item.branch} (${item.repo}) to ${scan.remote}`)
     void this.gitStream(run, item.repoPath, ['push', '-u', scan.remote, item.branch]).then((code) => {
-      this.journalOf(item, 'push', code === 0, { detail: `to ${scan.remote}` })
+      this.journalOf(item, 'push', code === 0, { detail: `to ${scan.remote}`, log: this.sections.get(run)?.id })
       this.endRun(run, code === 0 ? 'ok' : 'failed')
     })
   }
@@ -1074,8 +1155,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     const plan = await this.prPlan(key)
     const { item, base, remote } = plan
     const branch = item.branch!
-    const run = this.startRun(item, 'pr', `Pull request for ${branch} into ${base}`, null)
-    this.log.action(`Open a pull request for ${branch} into ${base} (${item.repo})`)
+    const run = this.startRun(item, 'pr', `Pull request for ${branch} into ${base}`, null, `Open a pull request for ${branch} into ${base} (${item.repo})`)
     void (async () => {
       let code = plan.push ? await this.gitStream(run, item.repoPath, ['push', '-u', remote, branch]) : 0
       let made: WorkPr | null = null
@@ -1089,7 +1169,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
         made = prInText(run.text.slice(from))
         if (made) this.prs.set(`${pathKey(item.repoPath)}|${branch}`, made)
       }
-      this.journalOf(item, 'pr', code === 0, { detail: `into ${base}`, url: made?.url })
+      this.journalOf(item, 'pr', code === 0, { detail: `into ${base}`, url: made?.url, log: this.sections.get(run)?.id })
       this.endRun(run, code === 0 ? 'ok' : 'failed')
     })()
   }
@@ -1115,8 +1195,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     const plan = await this.mergePlan(key, into)
     const { item, target } = plan
     const branch = item.branch!
-    const run = this.startRun(item, 'merge', `Merge ${branch} into ${plan.into}`, null)
-    this.log.action(`Merge ${branch} into ${plan.into} (${item.repo})`)
+    const run = this.startRun(item, 'merge', `Merge ${branch} into ${plan.into}`, null, `Merge ${branch} into ${plan.into} (${item.repo})`)
     const conflicts = `\nThe merge has conflicts, so it was undone. Merge ${branch} into ${plan.into} by hand.\n`
     /** Merges in a folder that has the target checked out; a merge that stops on conflicts is undone. */
     const mergeIn = async (dir: string): Promise<number> => {
@@ -1145,7 +1224,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
           }
         }
       }
-      this.journalOf(item, 'merge', code === 0, { detail: `into ${plan.into}` })
+      this.journalOf(item, 'merge', code === 0, { detail: `into ${plan.into}`, log: this.sections.get(run)?.id })
       this.endRun(run, code === 0 ? 'ok' : 'failed')
     })()
   }
@@ -1176,7 +1255,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     const { item } = plan
     if (plan.blocked) throw new Error(plan.blocked)
     if (plan.losses.length && !force) throw new Error(plan.losses.join(' '))
-    this.log.action(`Clean up ${item.name} (${item.repo})${force && plan.losses.length ? `, discarding: ${plan.losses.join(' ')}` : ''}`)
+    const section = this.log.action(`Clean up ${item.name} (${item.repo})${force && plan.losses.length ? `, discarding: ${plan.losses.join(' ')}` : ''}`, item.path)
     try {
       if (item.state === 'orphaned') await this.act(item.repoPath, ['worktree', 'prune'])
       else {
@@ -1185,7 +1264,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
         await this.act(item.repoPath, ['worktree', 'remove', ...(force ? ['--force'] : []), '--', item.path], 120_000)
       }
     } catch (e: any) {
-      this.journalOf(item, 'cleanup', false, { detail: String(e?.message ?? e).split('\n')[0] })
+      this.journalOf(item, 'cleanup', false, { detail: String(e?.message ?? e).split('\n')[0], log: section.id })
       throw new Error(`Could not remove the folder: ${String(e?.message ?? e).split('\n')[0]} Close the editor window on it and try again.`)
     }
     let message = `Removed worktree ${item.name}`
@@ -1203,7 +1282,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       this.save()
     }
     await this.tryAct(item.repoPath, ['worktree', 'prune'])
-    this.journalOf(item, 'cleanup', true, { detail: force && plan.losses.length ? 'discarded unmerged work' : undefined })
+    this.journalOf(item, 'cleanup', true, { detail: force && plan.losses.length ? 'discarded unmerged work' : undefined, log: section.id })
     const scan = await this.scanRepo(item.repoPath)
     if (scan) this.scans.set(pathKey(item.repoPath), scan)
     this.emit('changed')

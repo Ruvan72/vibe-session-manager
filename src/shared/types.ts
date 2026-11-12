@@ -317,6 +317,8 @@ export interface WorkJournalEntry {
   agent?: WorkAgent
   ok: boolean
   detail?: string
+  /** The heading time of its part of the command log. Entries from before the log had a part per action lack it. */
+  log?: string
   /** The pull request that was opened. */
   url?: string
 }
@@ -360,7 +362,13 @@ export interface WorkSetupInfo {
   install: string | null
 }
 
-/** The end of <dataDir>/work/commands.log. */
+/** The part of the command log to read: what was run for one worktree (its key), or one action of the history (its log id). */
+export interface WorkLogScope {
+  key?: string
+  id?: string
+}
+
+/** The end of <dataDir>/work/commands.log, or of the part that was asked for. */
 export interface WorkLogTail {
   file: string
   text: string
