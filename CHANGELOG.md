@@ -4,11 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-12
+
 ### Added
 
 - **Work** tab: create a git worktree on its own branch under `.claude/worktrees` of a repo and open it in the editor, optionally with the repo's `.env` files copied in and `node_modules` linked or installed, let Claude Code or Codex commit what is in it, push, merge into the branch it came from, and clean up the worktree and branch afterwards. A list shows where every worktree stands (agent working, uncommitted, new, pending merge, ready for cleanup, folder gone). Work in the repo's own folder is listed too while it has something to commit, merge or push, and that folder is never removed. The tab keeps a history of what it did and a command log with every command it ran and its output, and **Log** on a worktree or on a line of the history shows just its part of that log. See [docs/USAGE.md](docs/USAGE.md#work).
 - **Create PR** on the Work tab: after asking, pushes the branch if needed and opens a pull request into the branch the work came from with the GitHub CLI. The row then shows the open pull request with a button to open it in the browser, and a refresh also finds pull requests made elsewhere. Needs `gh` installed and signed in.
 - **Archive** tab and an opt-in setting to keep a copy of every Claude Code, Cowork and Codex conversation, so it survives closed windows, removed worktrees and Claude Code's cleanup. Search all of it, read it as Markdown with the matches highlighted, and open a session from the results. When its folder or transcript is gone, the app asks and brings them back first. See [docs/USAGE.md](docs/USAGE.md#archive).
+- **Plan usage** shows Claude's separate weekly limit for Fable on its own line under Claude, when live Claude usage is on.
 
 ## [0.1.2] - 2026-11-03
 
@@ -39,7 +42,8 @@ First public release.
 - Time tracking per day, repo and session, with CSV export.
 - Windows installer and portable `.exe`.
 
-[Unreleased]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Ruvan72/vibe-session-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Ruvan72/vibe-session-manager/releases/tag/v0.1.0
