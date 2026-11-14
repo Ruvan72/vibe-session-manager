@@ -142,6 +142,8 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     const gone = (k: string | null) => (k && o.items.some((i) => i.key === k) ? k : null)
     setOpenKey(gone)
     setHoverKey(gone)
+    // Its merge menu goes with it, so the row opens again without one.
+    setMergeMenu((m) => (m?.startsWith('row:') && !o.items.some((i) => `row:${i.key}` === m) ? null : m))
   }, [])
 
   useEffect(() => {
