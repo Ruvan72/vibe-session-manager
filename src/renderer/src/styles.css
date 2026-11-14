@@ -1849,10 +1849,12 @@ h3 .label {
   margin: 0 6px;
   padding: 7px 8px;
   border-radius: 8px;
+  cursor: pointer;
 }
 
-.work-item:hover {
-  background: var(--bg-hover);
+/* The row under the mouse and the row whose buttons are shown, like the Sessions list. */
+.work-item.selected {
+  background: var(--bg-selected);
 }
 
 .work-item .row-title {

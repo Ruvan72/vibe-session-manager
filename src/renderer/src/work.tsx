@@ -125,6 +125,9 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
   const [mergeMenu, setMergeMenu] = useState<string | null>(null)
   /** Paths of the repos to show; none = all. */
   const [shown, setShown] = useState<string[]>([])
+  /** The row whose action buttons are shown, and the row under the mouse, by worktree key. */
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
   const runRef = useRef<HTMLPreElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -263,6 +266,12 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     setPanel('log')
   }
 
+  /** Shows a row's buttons, or hides them when they are shown; a merge menu of the row that closes goes with it. */
+  const toggleRow = (key: string) => {
+    if (openKey) setMergeMenu((m) => (m === `row:${openKey}` ? null : m))
+    setOpenKey((k) => (k === key ? null : key))
+  }
+
   const actions = (i: WorkItem, withOpen: boolean) => {
     const wait = busy === i.key
     const blocked = running ? 'Wait for what is running, or stop it' : undefined
@@ -282,7 +291,8 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
       void act(i.key, () => api.mergeWork(i.key, b))
     }
     return (
-      <div className="actions work-actions">
+      // Clicks on the buttons and in the merge menu are theirs, not the row's.
+      <div className="actions work-actions" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
         {withOpen && i.state !== 'orphaned' && (
           <button title={`Open ${i.root ? "the repo's folder" : 'this worktree'} in the editor (double-click)`} onClick={() => void act(i.key, () => api.openWork(i.key))}>
             Open
@@ -526,11 +536,18 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
             {g.items.map((i) => (
               <div
                 key={i.key}
-                className={`work-item state-${i.state}`}
-                title={i.path}
-                onDoubleClick={(e) => {
-                  if (!(e.target instanceof HTMLButtonElement) && i.state !== 'orphaned') void act(i.key, () => api.openWork(i.key))
+                className={`work-item state-${i.state} ${i.key === hoverKey || i.key === openKey ? 'selected' : ''}`}
+                title={`${i.path}\n${i.state === 'orphaned' ? 'Click: actions' : 'Click: actions · Double-click: open in the editor'}`}
+                onClick={(e) => {
+                  // Only the first click of a double-click shows or hides the buttons; the second is ignored.
+                  if (e.detail === 1) toggleRow(i.key)
                 }}
+                onDoubleClick={() => {
+                  // Undo the first click's toggle, so the buttons stay as they were before the double-click.
+                  toggleRow(i.key)
+                  if (i.state !== 'orphaned') void act(i.key, () => api.openWork(i.key))
+                }}
+                onMouseMove={hoverKey === i.key ? undefined : () => setHoverKey(i.key)}
               >
                 <WorkStateIcon state={i.state} />
                 <div className="row-main">
@@ -552,7 +569,7 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
                     <span className={`work-state state-${i.state}`}>{WORK_STATE_LABEL[i.state]}</span>
                     <span className="where">{workDetail(i)}</span>
                   </div>
-                  {actions(i, true)}
+                  {openKey === i.key && actions(i, true)}
                 </div>
                 <div className="row-side">{i.lastCommitAt && <time title={`Last commit ${absTime(i.lastCommitAt)}`}>{relTime(i.lastCommitAt, now)}</time>}</div>
               </div>

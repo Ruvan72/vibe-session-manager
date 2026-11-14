@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+
+- **Work** tab: a worktree's buttons are shown only after its row is clicked, one row at a time, and a second click hides them again. Double-clicking a row still opens it in the editor. The row under the mouse is highlighted like on the Sessions tab. The buttons under the output of a run are always shown, as before.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added
