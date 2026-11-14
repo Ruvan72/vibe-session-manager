@@ -24,6 +24,8 @@ export interface SessionView {
   light: Light
   /** Hidden by the user: left out of the list, the counts and notifications unless shown. */
   hidden: boolean
+  /** Pinned by the user: listed first, and in the list whatever the time range. Not part of the light. */
+  pinned: boolean
   /** Ids of the labels the user put on the session (see LabelDef), in label order. Not part of the light. */
   labels: string[]
   /** True when the light is guessed from the transcript instead of hook events. */

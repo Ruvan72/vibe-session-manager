@@ -26,21 +26,21 @@ export function rangeStart(range: Range, now: number): number {
 }
 
 /**
- * Applies filters and search. Sessions that need attention, are working or have a label always
- * pass the time range, and a search ignores it, so older sessions can be found.
- * Result is sorted by last activity, newest first.
+ * Applies filters and search. Sessions that need attention, are working, have a label or are pinned always
+ * pass the time range, and a search ignores it, so older sessions can be found. Every other filter applies to pinned sessions too.
+ * Result has the pinned sessions first, then the rest; each part sorted by last activity, newest first.
  */
 export function visibleSessions(sessions: SessionView[], f: Filters, hits: SearchHit[] | null, now: number): SessionView[] {
   const hitIds = hits ? new Set(hits.map((h) => h.id)) : null
   const since = rangeStart(f.range, now)
   return sessions
-    .filter((s) => (hitIds ? hitIds.has(s.id) : s.lastActivity >= since || s.light !== 'grey' || s.labels.length > 0))
+    .filter((s) => (hitIds ? hitIds.has(s.id) : s.lastActivity >= since || s.light !== 'grey' || s.labels.length > 0 || s.pinned))
     .filter((s) => !f.lights.length || f.lights.includes(s.light))
     .filter((s) => !f.liveOnly || s.status !== 'closed')
     .filter((s) => f.showHidden || !s.hidden)
     .filter((s) => !f.label || s.labels.includes(f.label))
     .filter((s) => !f.repos?.length || f.repos.includes(s.repoKey))
-    .sort((a, b) => b.lastActivity - a.lastActivity)
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.lastActivity - a.lastActivity)
 }
 
 export interface RepoOption {
@@ -82,15 +82,38 @@ export interface Group {
   sessions: SessionView[]
 }
 
-/** Sessions per repo. Repos are ordered by name; sessions keep their order (most recent first). */
+/** The key of the Pinned section in the grouped view. Repo keys are paths, so they cannot clash with it. */
+export const PINNED_GROUP = '__pinned'
+
+/**
+ * Sessions per repo. Repos are ordered by name; sessions keep their order (most recent first).
+ * Pinned sessions go in a 'Pinned' group above the repos instead of their repo's group, if there are any.
+ */
 export function groupSessions(sorted: SessionView[]): Group[] {
+  const pinned: Group = { key: PINNED_GROUP, label: 'Pinned', sessions: [] }
   const groups = new Map<string, Group>()
   for (const s of sorted) {
+    if (s.pinned) {
+      pinned.sessions.push(s)
+      continue
+    }
     let g = groups.get(s.repoKey)
     if (!g) groups.set(s.repoKey, (g = { key: s.repoKey, label: s.repo, sessions: [] }))
     g.sessions.push(s)
   }
-  return [...groups.values()].sort((a, b) => byName(a.label, b.label) || a.key.localeCompare(b.key))
+  const repos = [...groups.values()].sort((a, b) => byName(a.label, b.label) || a.key.localeCompare(b.key))
+  return pinned.sessions.length ? [pinned, ...repos] : repos
+}
+
+/** Whether a group's rows name their repo: the heading of a repo group already does, the Pinned section's does not. */
+export function groupRowsShowRepo(g: Group): boolean {
+  return g.key === PINNED_GROUP
+}
+
+/** The session Ctrl+P (Cmd+P) pins or unpins: the selected one, on the Sessions tab only. Null when the key does nothing. */
+export function pinShortcutTarget(e: { key: string; ctrlKey: boolean; metaKey: boolean }, tab: string, selected: SessionView | null): SessionView | null {
+  if (tab !== 'sessions' || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'p') return null
+  return selected
 }
 
 /** Sessions in on-screen order, for keyboard navigation and Ctrl+1…9. */

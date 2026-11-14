@@ -90,6 +90,40 @@ describe('SessionStore', () => {
     again.stop()
   })
 
+  it('pins and unpins a session without touching its light, the counts or the urgent queue', async () => {
+    const env = setup()
+    store = new SessionStore({ claudeDir: env.claudeDir, dataDir: env.dataDir, pollMs: 1e9, isAlive: (pid) => pid === 4242 })
+    await store.start()
+    expect(store.get('sess-1')?.pinned).toBe(false)
+
+    env.live('idle')
+    await store.poll()
+    store.markUnread('sess-1')
+    const before = { light: store.get('sess-1')?.light, counts: store.snapshot().counts, urgent: store.urgent().map((s) => s.id) }
+    expect(before.light).toBe('yellow')
+    expect(before.urgent).toEqual(['sess-1'])
+
+    store.setPinned('sess-1', true)
+    expect(store.snapshot().sessions.find((s) => s.id === 'sess-1')?.pinned).toBe(true)
+    expect(store.get('sess-1')?.light).toBe(before.light)
+    expect(store.snapshot().counts).toEqual(before.counts)
+    expect(store.urgent().map((s) => s.id)).toEqual(before.urgent)
+
+    store.setPinned('sess-1', false)
+    expect(store.snapshot().sessions.find((s) => s.id === 'sess-1')?.pinned).toBe(false)
+    expect(store.get('sess-1')?.light).toBe(before.light)
+    expect(store.snapshot().counts).toEqual(before.counts)
+    expect(store.urgent().map((s) => s.id)).toEqual(before.urgent)
+
+    // A pin survives a restart.
+    store.setPinned('sess-1', true)
+    store.stop()
+    const again = new SessionStore({ claudeDir: env.claudeDir, dataDir: env.dataDir, pollMs: 1e9, isAlive: () => false })
+    await again.start()
+    expect(again.get('sess-1')?.pinned).toBe(true)
+    again.stop()
+  })
+
   it('uses hook events once hooks are installed', async () => {
     const env = setup()
     writeFileSync(path.join(env.claudeDir, 'settings.json'), JSON.stringify({ hooks: Object.fromEntries(['Notification', 'Stop', 'UserPromptSubmit', 'SessionStart', 'SessionEnd'].map((e) => [e, [{ hooks: [{ type: 'command', command: 'node "x/.vibe-session-manager/hook.cjs"' }] }]])) }))

@@ -139,6 +139,7 @@ export function buildView(
     status,
     light: l.light,
     hidden: false,
+    pinned: false,
     labels: [],
     lightGuess: l.guess,
     reason: l.reason,

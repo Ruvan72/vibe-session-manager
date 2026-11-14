@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- **Pin** sessions to the top of the Sessions list, from the details or with `Ctrl+P`. Pinned sessions come first and show a pin. With grouping on they get a **Pinned** section above the repos. They stay in the list whatever the time range is, and the pins are kept in `state.json` across restarts. See [docs/USAGE.md](docs/USAGE.md#the-list).
+
 ## [0.2.0] - 2026-11-12
 
 ### Added

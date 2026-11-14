@@ -89,6 +89,7 @@ For other editors and for Codex, see 5.4.
 | In the list: `Ctrl+E` | Toggle between seen and unread (decided 2026-10-02): a red or yellow session is marked as seen, a gray one as unread (yellow again). A green session (working) is not affected, and the button in the detail is disabled |
 | In the list: `Ctrl+U` | Mark the selected session as unread (yellow again) |
 | In the list: `Ctrl+L` | Open the label list for the selected session (3.8) |
+| In the list: `Ctrl+P` (macOS `Cmd+P`) | Pin the selected session to the top of the list, or unpin it (3.10) |
 | In the list: `F2` | Rename the selected Claude Code session (6) |
 | In the list: `Esc` | Clear search, otherwise close the window |
 | In the window: `Ctrl` `+` / `Ctrl` `-` / `Ctrl+0` | Larger / smaller / normal text, as in an editor. The size is remembered (`zoomLevel` in `config.json`) |
@@ -142,6 +143,17 @@ Closing a window loses the way back to a session started in a worktree, and Clau
 - **Search** runs over the full text of the Markdown copies, unclipped, plus title, repo, worktree, branch, folder, id and agent. It loads the text into memory the first time the Archive tab is opened.
 - **Reader:** the conversation as Markdown with the matches highlighted, and next and previous match. A conversation can hold anything, so it is parsed to tokens and rendered as React elements: no raw HTML, no remote images, and only http(s) links can be followed, in the browser.
 - **Open** is offered on every result. What is on disk is checked each time a session is listed: the session's folder and its transcript. If something needed is gone, the app asks first, brings it back (5.7) and then opens the session as usual.
+
+### 3.10 Pinned sessions (decided 2026-11-14)
+
+A session can be **pinned** so it stays at the top of the Sessions list, e.g. the one you keep coming back to all week.
+
+- **Pin** / **Unpin** in the detail (next to Hide), or `Ctrl+P` (macOS `Cmd+P`) for the selected row. A pinned row shows a pin icon next to its time.
+- Flat list: pinned sessions come first, latest activity first, then the other sessions as usual.
+- Grouped by repo: a **Pinned** section comes above all the repo groups. Pinned sessions are listed only there, not again in their repo's group, and their rows show the repo name as in the flat list. A repo whose sessions are all pinned gets no group of its own. Keyboard navigation and `Ctrl+1` … `Ctrl+9` follow this order.
+- Pinned sessions stay in the list whatever the time range is. All other filters still apply: colour, "Open only", repo, label, hidden and search. A hidden pinned session stays hidden; hiding does not unpin it.
+- Pins do not affect the traffic light, the tray badge, the counts or the notifications.
+- A pin stays until the user removes it, also when the session closes, and survives restarts. Pins are stored in `state.json` in the app's data folder, next to the hidden sessions.
 
 ## 4. Architecture
 

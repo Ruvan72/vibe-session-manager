@@ -18,6 +18,7 @@ const api: Api = {
   markSeen: (id) => ipcRenderer.invoke('mark-seen', id),
   markUnread: (id) => ipcRenderer.invoke('mark-unread', id),
   setHidden: (id, hidden) => ipcRenderer.invoke('set-hidden', id, hidden),
+  setPinned: (id, pinned) => ipcRenderer.invoke('set-pinned', id, pinned),
   rename: (id, title) => ipcRenderer.invoke('rename', id, title),
   setLabel: (id, labelId, on) => ipcRenderer.invoke('set-label', id, labelId, on),
   addLabel: (id, name, icon) => ipcRenderer.invoke('add-label', id, name, icon),

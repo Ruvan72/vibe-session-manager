@@ -12,6 +12,8 @@ Click a session to show its details (last prompt, last reply, time) and click ag
 
 **Hide** (right side of the details) leaves a session out of the list, the counts, the tray badge and notifications. Its files are not touched, and it can be undone: the eye next to Sessions/Time shows hidden sessions (dimmed), and their details have **Unhide**. Hidden sessions are stored in `~/.vibe-session-manager/state.json`. Their time still counts in the Time tab.
 
+**Pin** (details, or `Ctrl+P`) keeps a session at the top of the list until you **Unpin** it, also after it closes or the app restarts. Pinned sessions are listed first, latest activity first, and show a pin next to their time. With **Group** on they get a **Pinned** section above the repos (with the repo name on each row) instead of sitting in their repo's group. Pinned sessions stay in the list whatever the time range is, but the other filters and search still apply, and a hidden pinned session stays hidden. Pins do not change the traffic light, the tray badge or notifications. They are stored in `~/.vibe-session-manager/state.json`.
+
 **Rename** a Claude Code session with the pencil that appears right of its title when you point at it, or with `F2`. A small field opens over the title with the title selected: `Enter` keeps the new name, `Esc` or clicking elsewhere cancels. The name is stored in the session's own transcript as a `custom-title` line, the same way Claude Code's `/rename` does it, so Claude Code shows it too. Codex sessions cannot be renamed here: Codex also keeps the title in a SQLite database the app does not touch, so Codex would go on showing the old name.
 
 **Labels** (details, or `Ctrl+L`) mark sessions as to-dos. It opens a checklist with **Pending merge**, **Needs attention**, **Review with peer** and any labels you added yourself. Below the list you can type a new label, pick one of 10 icons and add it. The × next to a label deletes it everywhere. A session shows its labels on its row, comma-separated, and each label in use gets a chip next to **Open only** that filters the list. Labelled sessions stay in the list whatever the time range is. Labels do not change the traffic light or the tray badge. They are stored in `~/.vibe-session-manager/labels.json`.
@@ -31,6 +33,7 @@ Click a session to show its details (last prompt, last reply, time) and click ag
 | `Ctrl+E` | Toggle seen / unread. A red or yellow session is marked as seen, a grey one as unread (yellow). No effect on a working (green) session |
 | `Ctrl+U` | Mark as unread: the session turns yellow again until you write in it or mark it as seen |
 | `Ctrl+L` | Labels for the selected session |
+| `Ctrl+P` | Pin the selected session to the top of the list, or unpin it |
 | `F2` | Rename the selected Claude Code session |
 | `Ctrl+T` | Next tab: Sessions, Time, Archive, Work |
 | `Ctrl` `+` / `Ctrl` `-` / `Ctrl+0` | Larger / smaller / normal text. The size is remembered |
@@ -211,7 +214,7 @@ Everything lives in `~/.vibe-session-manager/`:
 | File | Content |
 |---|---|
 | `config.json` | Settings |
-| `state.json` | Seen marks, unread marks and hidden sessions |
+| `state.json` | Seen marks, unread marks, hidden sessions and pinned sessions |
 | `labels.json` | Labels and which sessions have them |
 | `time/<YYYY-MM-DD>.json` | Active time per day |
 | `window.json` | Window position and size |

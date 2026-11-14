@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DebugActions, SettingsInfo } from '../../shared/api.ts'
 import type { LabelDef, Light, SearchHit, SessionView, Snapshot, UsageSnapshot } from '../../shared/types.ts'
 import { ArchiveView } from './archive.tsx'
-import { AgentIcon, Detail, LightIcon, RepoFilter, SettingsPanel, TimeView, TitleEditor, UsageStrip, Where } from './components.tsx'
+import { AgentIcon, Detail, LightIcon, PinIcon, RepoFilter, SettingsPanel, TimeView, TitleEditor, UsageStrip, Where } from './components.tsx'
 import { LabelGlyph, LabelList } from './labels.tsx'
 import { playBlop } from './sound.ts'
 import { WorkView } from './work.tsx'
-import { flattenGroups, groupSessions, LIGHT_LABEL, relTime, repoOptions, visibleSessions, type Filters, type Range } from './view.ts'
+import { flattenGroups, groupRowsShowRepo, groupSessions, LIGHT_LABEL, pinShortcutTarget, relTime, repoOptions, visibleSessions, type Filters, type Range } from './view.ts'
 
 const api = window.api
 const EMPTY: Snapshot = { sessions: [], hooks: 'none', scanning: true, counts: { red: 0, yellow: 0, green: 0 }, searchVersion: 0, labels: [] }
@@ -20,6 +20,11 @@ const TABS: { id: Tab; name: string }[] = [
   { id: 'archive', name: 'Archive' },
   { id: 'work', name: 'Work' }
 ]
+
+/** Pins an unpinned session, unpins a pinned one. */
+export function togglePin(s: SessionView): void {
+  void api.setPinned(s.id, !s.pinned)
+}
 
 export function App() {
   const [snap, setSnap] = useState<Snapshot>(EMPTY)
@@ -226,6 +231,9 @@ export function App() {
       setSelectedId(selected.id)
       setExpandedId(selected.id)
       setLabelMenuFor(selected.id)
+    } else if (pinShortcutTarget(e, tab, selected)) {
+      e.preventDefault()
+      togglePin(selected!)
     } else if (mod && e.key.toLowerCase() === 'u' && selected) {
       e.preventDefault()
       markUnread(selected)
@@ -255,7 +263,8 @@ export function App() {
   const toggleLight = (l: Light) =>
     setFilters((f) => ({ ...f, lights: f.lights.includes(l) ? f.lights.filter((x) => x !== l) : [...f.lights, l] }))
 
-  const row = (s: SessionView) => {
+  // `inRepoGroup`: the row sits under its repo's heading, so it leaves the repo name out.
+  const row = (s: SessionView, inRepoGroup = grouped) => {
     const index = ordered.indexOf(s)
     return (
       <SessionRow
@@ -266,7 +275,7 @@ export function App() {
         selected={s.id === selected?.id}
         expanded={s.id === expandedId}
         snippet={snippets.get(s.id) ?? null}
-        grouped={grouped}
+        grouped={inRepoGroup}
         onJump={() => void jump(s)}
         onToggle={() => {
           setSelectedId(s.id)
@@ -275,6 +284,7 @@ export function App() {
         onSeen={() => markSeen(s)}
         onUnread={() => markUnread(s)}
         onHide={() => setHidden(s, !s.hidden)}
+        onPin={() => togglePin(s)}
         labels={snap.labels}
         labelMenuOpen={labelMenuFor === s.id}
         onLabelMenu={(open) => setLabelMenuFor(open ? s.id : null)}
@@ -435,10 +445,10 @@ export function App() {
           ? groups.map((g) => (
               <section key={g.key} className="group">
                 <h2>{g.label}</h2>
-                {g.sessions.map(row)}
+                {g.sessions.map((s) => row(s, !groupRowsShowRepo(g)))}
               </section>
             ))
-          : ordered.map(row)}
+          : ordered.map((s) => row(s))}
       </div>
 
       </>
@@ -492,6 +502,7 @@ interface RowProps {
   onSeen(): void
   onUnread(): void
   onHide(): void
+  onPin(): void
   labels: LabelDef[]
   labelMenuOpen: boolean
   onLabelMenu(open: boolean): void
@@ -502,7 +513,7 @@ interface RowProps {
   onRenameDone(title: string | null): void
 }
 
-function SessionRow({ s, index, now, selected, expanded, snippet, grouped, onJump, onToggle, onSeen, onUnread, onHide, labels, labelMenuOpen, onLabelMenu, onHover, renaming, onRename, onRenameDone }: RowProps) {
+export function SessionRow({ s, index, now, selected, expanded, snippet, grouped, onJump, onToggle, onSeen, onUnread, onHide, onPin, labels, labelMenuOpen, onLabelMenu, onHover, renaming, onRename, onRenameDone }: RowProps) {
   const attention = s.light === 'red' || s.light === 'yellow'
   return (
     <div className={`row-wrap ${expanded ? 'expanded' : ''} ${s.hidden ? 'is-hidden' : ''}`}>
@@ -557,7 +568,10 @@ function SessionRow({ s, index, now, selected, expanded, snippet, grouped, onJum
           {snippet && <div className="snippet">{snippet}</div>}
         </div>
         <div className="row-side">
-          <time title={new Date(s.lastActivity).toLocaleString()}>{relTime(s.lastActivity, now)}</time>
+          <span className="row-time">
+            {s.pinned && <PinIcon />}
+            <time title={new Date(s.lastActivity).toLocaleString()}>{relTime(s.lastActivity, now)}</time>
+          </span>
           {index < 9 && <span className="hint">Ctrl+{index + 1}</span>}
         </div>
         <button
@@ -573,7 +587,7 @@ function SessionRow({ s, index, now, selected, expanded, snippet, grouped, onJum
           <svg viewBox="0 0 16 16" aria-hidden><path d={expanded ? 'M4 6l4 4 4-4' : 'M6 4l4 4-4 4'} /></svg>
         </button>
       </div>
-      {expanded && <Detail s={s} labels={labels} labelMenuOpen={labelMenuOpen} onLabelMenu={onLabelMenu} onJump={onJump} onSeen={onSeen} onUnread={onUnread} onHide={onHide} />}
+      {expanded && <Detail s={s} labels={labels} labelMenuOpen={labelMenuOpen} onLabelMenu={onLabelMenu} onJump={onJump} onSeen={onSeen} onUnread={onUnread} onHide={onHide} onPin={onPin} />}
     </div>
   )
 }

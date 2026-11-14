@@ -101,7 +101,7 @@ describe('Cowork sessions in the store', () => {
     expect(ids.sort()).toEqual(['cli-a', 'cli-b', 'cli-d'])
 
     const a = store.get('cli-a')!
-    expect(a).toMatchObject({ agent: 'cowork', title: 'Privacy policy review', repo: 'GDPR', homeDir: folder, branch: null, branches: [], editor: 'Claude app', status: 'closed', light: 'grey' })
+    expect(a).toMatchObject({ agent: 'cowork', title: 'Privacy policy review', repo: 'GDPR', homeDir: folder, branch: null, branches: [], editor: 'Claude app', status: 'closed', light: 'grey', pinned: false })
     const b = store.get('cli-b')!
     expect(b).toMatchObject({ agent: 'cowork', title: 'Linux cheat sheet', repo: 'Cowork', homeDir: path.join(root, ACCOUNT, ORG, 'local_bbb', 'outputs') })
     expect(a.repoKey).not.toBe(b.repoKey)

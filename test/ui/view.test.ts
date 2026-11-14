@@ -1,7 +1,7 @@
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { drawTrayIcon } from '../../src/main/icon.ts'
-import { clipToDay, dayCsv, displayOrder, formatDuration, groupSessions, inRepos, relTime, repoNameOptions, repoOptions, shiftDay, visibleSessions, workDetail, workJournalText } from '../../src/renderer/src/view.ts'
+import { clipToDay, dayCsv, displayOrder, flattenGroups, formatDuration, groupSessions, inRepos, relTime, repoNameOptions, repoOptions, shiftDay, visibleSessions, workDetail, workJournalText } from '../../src/renderer/src/view.ts'
 import type { SessionView, WorkItem, WorkJournalEntry } from '../../src/shared/types.ts'
 
 const NOW = Date.parse('2026-10-01T12:00:00')
@@ -44,6 +44,85 @@ describe('visibleSessions', () => {
     const multi = [s('a1', 1, { repoKey: 'a' }), s('b1', 2, { repoKey: 'b' }), s('c1', 3, { repoKey: 'c' })]
     expect(visibleSessions(multi, { ...f, repos: ['a', 'c'] }, null, NOW).map((x) => x.id)).toEqual(['a1', 'c1'])
     expect(visibleSessions(multi, { ...f, repos: [] }, null, NOW).map((x) => x.id)).toEqual(['a1', 'b1', 'c1'])
+  })
+})
+
+describe('pinned sessions', () => {
+  const f = { lights: [], liveOnly: false, range: 'all' as const }
+  const ids = (list: SessionView[]) => list.map((x) => x.id)
+  const at = (id: string, lastActivity: number, extra: Partial<SessionView> = {}) => s(id, 0, { lastActivity, ...extra })
+
+  it('come first, newest first, then the others', () => {
+    const list = [at('A', 300), at('B', 100, { pinned: true }), at('C', 200, { pinned: true })]
+    expect(ids(visibleSessions(list, f, null, NOW))).toEqual(['C', 'B', 'A'])
+  })
+
+  it('stay in the list whatever the time range', () => {
+    const old = s('old', 48, { pinned: true })
+    expect(ids(visibleSessions([old], { ...f, range: 'today' }, null, NOW))).toEqual(['old'])
+    expect(ids(visibleSessions([{ ...old, pinned: false }], { ...f, range: 'today' }, null, NOW))).toEqual([])
+  })
+
+  const p = (extra: Partial<SessionView> = {}) => s('p', 1, { pinned: true, light: 'grey', status: 'closed', repoKey: 'k/a', labels: [], ...extra })
+
+  it('are left out by a colour filter without their light', () => {
+    expect(ids(visibleSessions([p()], { ...f, lights: ['red'] }, null, NOW))).toEqual([])
+  })
+
+  it('are left out by Open only when closed', () => {
+    expect(ids(visibleSessions([p()], { ...f, liveOnly: true }, null, NOW))).toEqual([])
+  })
+
+  it('are left out by a repo filter without their repo', () => {
+    expect(ids(visibleSessions([p()], { ...f, repos: ['k/b'] }, null, NOW))).toEqual([])
+  })
+
+  it('are left out by a label filter for a label they do not have', () => {
+    expect(ids(visibleSessions([p()], { ...f, label: 'pending-merge' }, null, NOW))).toEqual([])
+  })
+
+  it('are left out when hidden and hidden sessions are not shown', () => {
+    expect(ids(visibleSessions([p({ hidden: true })], { ...f, showHidden: false }, null, NOW))).toEqual([])
+  })
+
+  it('are left out by a search that does not find them', () => {
+    expect(ids(visibleSessions([p()], f, [{ id: 'other', snippet: null }], NOW))).toEqual([])
+  })
+
+  it('get their own Pinned group above the repos, and not in their repo group', () => {
+    const list = visibleSessions(
+      [
+        at('x1', 500, { repoKey: 'x', repo: 'x' }),
+        at('y1', 400, { repoKey: 'y', repo: 'Y' }),
+        at('xp-old', 100, { repoKey: 'x', repo: 'x', pinned: true }),
+        at('yp-new', 300, { repoKey: 'y', repo: 'Y', pinned: true }),
+        at('zp', 200, { repoKey: 'z', repo: 'z', pinned: true })
+      ],
+      f,
+      null,
+      NOW
+    )
+    const groups = groupSessions(list)
+    expect(groups.map((g) => [g.key, g.label, ids(g.sessions)])).toEqual([
+      ['__pinned', 'Pinned', ['yp-new', 'zp', 'xp-old']],
+      ['x', 'x', ['x1']],
+      ['y', 'Y', ['y1']]
+    ])
+  })
+
+  it('leave the grouping as it was when none are pinned', () => {
+    const list = [s('b', 1, { repoKey: 'y', repo: 'Y' }), s('a', 2, { repoKey: 'x', repo: 'x' })]
+    expect(groupSessions(list)).toEqual([
+      { key: 'x', label: 'x', sessions: [list[1]] },
+      { key: 'y', label: 'Y', sessions: [list[0]] }
+    ])
+  })
+
+  it('come first in the display order, grouped or flat', () => {
+    const list = visibleSessions([at('b', 500, { repoKey: 'b', repo: 'b' }), at('a', 400, { repoKey: 'a', repo: 'a' }), at('p', 100, { repoKey: 'b', repo: 'b', pinned: true })], f, null, NOW)
+    expect(ids(displayOrder(list, true))).toEqual(['p', 'a', 'b'])
+    expect(ids(flattenGroups(groupSessions(list)))).toEqual(['p', 'a', 'b'])
+    expect(ids(displayOrder(list, false))).toEqual(['p', 'b', 'a'])
   })
 })
 

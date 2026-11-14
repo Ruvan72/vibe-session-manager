@@ -200,6 +200,12 @@ export class SessionStore extends EventEmitter<StoreEvents> {
     this.rebuild(new Set([id]), false)
   }
 
+  /** Pinned sessions are listed first. The pin does not change the light, the counts or the notifications. */
+  setPinned(id: string, pinned: boolean): void {
+    this.seen.setPinned(id, pinned)
+    this.rebuild(new Set([id]), false)
+  }
+
   /**
    * Renames a Claude Code session in its transcript, where Claude Code reads it too. Codex keeps its
    * titles in a SQLite database as well, so a Codex rename would not show in Codex; it is not offered.
@@ -577,6 +583,7 @@ export class SessionStore extends EventEmitter<StoreEvents> {
       const err = this.errors.get(id)
       if (err) view.error = err
       view.hidden = this.seen.isHidden(id)
+      view.pinned = this.seen.isPinned(id)
       view.labels = this.labels.of(id)
 
       // New text does not always change the view (e.g. a message with only pasted text), so index first.

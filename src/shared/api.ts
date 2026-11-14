@@ -44,6 +44,8 @@ export interface Api {
   markSeen(id: string): Promise<void>
   markUnread(id: string): Promise<void>
   setHidden(id: string, hidden: boolean): Promise<void>
+  /** Pins a session to the top of the list, or unpins it. */
+  setPinned(id: string, pinned: boolean): Promise<void>
   /** Gives a Claude Code session a custom title, stored in its transcript. False if nothing was written. */
   rename(id: string, title: string): Promise<boolean>
   /** Puts a label on a session or takes it off. */

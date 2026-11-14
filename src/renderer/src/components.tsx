@@ -367,9 +367,20 @@ interface DetailProps {
   onSeen(): void
   onUnread(): void
   onHide(): void
+  onPin(): void
 }
 
-export function Detail({ s, labels, labelMenuOpen, onLabelMenu, onJump, onSeen, onUnread, onHide }: DetailProps) {
+/** The pin shown on pinned rows. */
+export function PinIcon() {
+  return (
+    <svg className="pin-icon" viewBox="0 0 16 16" role="img" aria-label="Pinned">
+      <title>Pinned</title>
+      <path d="M6 2h4M7 2.5v4L4.5 9.5h7L9 6.5v-4M8 9.5V14" />
+    </svg>
+  )
+}
+
+export function Detail({ s, labels, labelMenuOpen, onLabelMenu, onJump, onSeen, onUnread, onHide, onPin }: DetailProps) {
   const [copied, setCopied] = useState<string | null>(null)
   const today = clipToDay(s.intervals, localDayStart(Date.now()))
   const copy = (label: string, text: string) => {
@@ -451,7 +462,10 @@ export function Detail({ s, labels, labelMenuOpen, onLabelMenu, onJump, onSeen, 
           </button>
           {labelMenuOpen && <LabelMenu s={s} defs={labels} onClose={() => onLabelMenu(false)} />}
         </div>
-        <button className="push" onClick={onHide} title={s.hidden ? 'Show this session in the list again' : 'Leave this session out of the list. Its files are not touched.'}>
+        <button className="push" onClick={onPin} title={s.pinned ? 'Let this session move with the others again (Ctrl+P)' : 'Keep this session at the top of the list (Ctrl+P)'}>
+          {s.pinned ? 'Unpin' : 'Pin'}
+        </button>
+        <button onClick={onHide} title={s.hidden ? 'Show this session in the list again' : 'Leave this session out of the list. Its files are not touched.'}>
           {s.hidden ? 'Unhide' : 'Hide'}
         </button>
       </div>

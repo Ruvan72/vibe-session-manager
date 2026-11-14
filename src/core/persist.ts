@@ -52,6 +52,7 @@ export class SeenStore {
   private seen: Record<string, number>
   private unread: Record<string, number>
   private hidden: Record<string, number>
+  private pinned: Record<string, number>
   /** Sessions marked "pending merge" before labels existed; moved to the labels once. */
   private legacyMerge: string[]
   private file: string
@@ -64,6 +65,7 @@ export class SeenStore {
     this.seen = raw?.seen && typeof raw.seen === 'object' ? raw.seen : {}
     this.unread = raw?.unread && typeof raw.unread === 'object' ? raw.unread : {}
     this.hidden = raw?.hidden && typeof raw.hidden === 'object' ? raw.hidden : {}
+    this.pinned = raw?.pinned && typeof raw.pinned === 'object' && !Array.isArray(raw.pinned) ? raw.pinned : {}
     this.legacyMerge = raw?.pendingMerge && typeof raw.pendingMerge === 'object' ? Object.keys(raw.pendingMerge) : []
     if (!raw) this.flush()
   }
@@ -94,6 +96,17 @@ export class SeenStore {
     this.schedule()
   }
 
+  isPinned(id: string): boolean {
+    return Object.hasOwn(this.pinned, id)
+  }
+
+  /** Pinned sessions are listed first. The pin stays until the user takes it off. */
+  setPinned(id: string, pinned: boolean, at = Date.now()): void {
+    if (pinned) this.pinned[id] = at
+    else delete this.pinned[id]
+    this.schedule()
+  }
+
   /** Returns the old "pending merge" marks once; they are dropped from state.json on the next write. */
   takeLegacyPendingMerge(): string[] {
     const ids = this.legacyMerge
@@ -115,7 +128,7 @@ export class SeenStore {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     try {
-      writeJson(this.file, { initializedAt: this.initializedAt, seen: this.seen, unread: this.unread, hidden: this.hidden })
+      writeJson(this.file, { initializedAt: this.initializedAt, seen: this.seen, unread: this.unread, hidden: this.hidden, pinned: this.pinned })
     } catch {}
   }
 }

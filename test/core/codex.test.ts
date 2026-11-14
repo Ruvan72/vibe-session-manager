@@ -89,6 +89,7 @@ describe('SessionStore with Codex', () => {
     store = new SessionStore({ claudeDir: path.join(root, '.claude'), codexDir: env.codexDir, dataDir: path.join(root, 'data'), pollMs: 1e9 })
     await store.start()
     expect(store.snapshot().sessions.map((s) => s.id)).toEqual([ID])
+    expect(store.get(ID)?.pinned).toBe(false)
     expect(store.get(ID)).toMatchObject({ agent: 'codex', title: 'Fejlsøg 403', repo: 'shop', status: 'busy', light: 'green', editor: 'Codex app' })
 
     const finished: string[] = []

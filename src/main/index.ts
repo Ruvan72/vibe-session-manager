@@ -726,6 +726,7 @@ function registerIpc(): void {
   ipcMain.handle('mark-seen', (_e, id: string) => store.markSeen(id))
   ipcMain.handle('mark-unread', (_e, id: string) => store.markUnread(id))
   ipcMain.handle('set-hidden', (_e, id: string, hidden: boolean) => store.setHidden(String(id), !!hidden))
+  ipcMain.handle('set-pinned', (_e, id: string, pinned: boolean) => store.setPinned(String(id), !!pinned))
   ipcMain.handle('rename', (_e, id: string, title: string) => store.rename(String(id), String(title)))
   ipcMain.handle('set-label', (_e, id: string, labelId: string, on: boolean) => store.setLabel(String(id), String(labelId), !!on))
   ipcMain.handle('add-label', (_e, id: string, name: string, icon: LabelIcon) => store.addLabel(String(id), String(name), icon))
