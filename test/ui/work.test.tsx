@@ -155,6 +155,17 @@ describe('Work rows', () => {
     expect(buttons('fix')).not.toEqual([])
   })
 
+  it('leave another open row and its merge menu open on a double-click', async () => {
+    const { row, buttons } = await show()
+    click(row('feat'))
+    click(within(row('feat')).getByRole('button', { name: 'Merge into another branch' }))
+    doubleClick(row('fix'))
+    await waitFor(() => expect(api.openWork).toHaveBeenCalledWith('k-fix'))
+    expect(buttons('feat')).toContain('Merge into main')
+    expect(buttons('fix')).toEqual([])
+    expect(within(row('feat')).queryByRole('menu')).not.toBeNull()
+  })
+
   it('do not open an orphaned row, but show its buttons on a click', async () => {
     const { row, buttons } = await show()
     doubleClick(row('gone'))
@@ -197,6 +208,19 @@ describe('Work rows', () => {
     changed!()
     await waitFor(() => expect(api.getWork.mock.calls.length).toBeGreaterThan(calls))
     await waitFor(() => expect(buttons('feat')).toContain('Merge into main'))
+  })
+
+  it('start closed when they come back after going away', async () => {
+    const { row, buttons, container } = await show()
+    click(row('feat'))
+    api.getWork.mockImplementation(() => Promise.resolve({ ...overview(), items: ITEMS.filter((i) => i.key !== 'k-feat') }))
+    changed!()
+    await waitFor(() => expect(container.querySelectorAll('.work-list .work-item')).toHaveLength(2))
+    api.getWork.mockImplementation(() => Promise.resolve(overview()))
+    changed!()
+    await waitFor(() => expect(container.querySelectorAll('.work-list .work-item')).toHaveLength(3))
+    expect(buttons('feat')).toEqual([])
+    expect(row('feat').classList.contains('selected')).toBe(false)
   })
 
   it('close their merge menu when they close', async () => {

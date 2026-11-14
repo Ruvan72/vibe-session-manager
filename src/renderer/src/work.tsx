@@ -128,6 +128,8 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
   /** The row whose action buttons are shown, and the row under the mouse, by worktree key. */
   const [openKey, setOpenKey] = useState<string | null>(null)
   const [hoverKey, setHoverKey] = useState<string | null>(null)
+  /** The open row and merge menu from before the last single click, which a double-click puts back. */
+  const beforeClick = useRef<{ openKey: string | null; mergeMenu: string | null } | null>(null)
   const runRef = useRef<HTMLPreElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -136,6 +138,10 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     const o = await api.getWork({ fetch })
     setOv(o)
     setRun(o.run)
+    // A row that went away is not open any more, so one that comes back with the same key starts closed.
+    const gone = (k: string | null) => (k && o.items.some((i) => i.key === k) ? k : null)
+    setOpenKey(gone)
+    setHoverKey(gone)
   }, [])
 
   useEffect(() => {
@@ -540,11 +546,18 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
                 title={`${i.path}\n${i.state === 'orphaned' ? 'Click: actions' : 'Click: actions · Double-click: open in the editor'}`}
                 onClick={(e) => {
                   // Only the first click of a double-click shows or hides the buttons; the second is ignored.
-                  if (e.detail === 1) toggleRow(i.key)
+                  if (e.detail !== 1) return
+                  beforeClick.current = { openKey, mergeMenu }
+                  toggleRow(i.key)
                 }}
                 onDoubleClick={() => {
-                  // Undo the first click's toggle, so the buttons stay as they were before the double-click.
-                  toggleRow(i.key)
+                  // Put back what the first click changed, so the open row and its menu stay as they were before the double-click.
+                  const before = beforeClick.current
+                  beforeClick.current = null
+                  if (before) {
+                    setOpenKey(before.openKey)
+                    setMergeMenu(before.mergeMenu)
+                  }
                   if (i.state !== 'orphaned') void act(i.key, () => api.openWork(i.key))
                 }}
                 onMouseMove={hoverKey === i.key ? undefined : () => setHoverKey(i.key)}
