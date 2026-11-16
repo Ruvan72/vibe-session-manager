@@ -28,6 +28,8 @@ export function App() {
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [filters, setFilters] = useState<Filters>({ lights: [], liveOnly: false, range: '3d' })
   const [grouped, setGrouped] = useState(false)
+  // Here and not in TimeView, which is remounted on each visit to the tab.
+  const [timeRepos, setTimeRepos] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [labelMenuFor, setLabelMenuFor] = useState<string | null>(null)
@@ -331,7 +333,7 @@ export function App() {
       <WorkView active={tab === 'work'} debug={archiveDebug} now={now} onMessage={setToast} />
 
       {tab === 'archive' || tab === 'work' ? null : tab === 'time' ? (
-        <TimeView snap={snap} onJump={jumpById} onMessage={setToast} />
+        <TimeView snap={snap} repos={timeRepos} onRepos={setTimeRepos} onJump={jumpById} onMessage={setToast} />
       ) : (
       <>
       <div className={`search ${query ? 'active' : ''}`}>

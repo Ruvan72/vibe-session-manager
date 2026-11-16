@@ -1,9 +1,9 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DebugActions } from '../../shared/api.ts'
 import type { ArchiveDoc, ArchiveHit, ArchiveOpenState, ArchiveStatus } from '../../shared/types.ts'
-import { AgentIcon, Where } from './components.tsx'
+import { AgentIcon, RepoFilter, Where } from './components.tsx'
 import { Highlighted, Markdown } from './markdown.tsx'
-import { absTime, formatBytes, highlightRegex, relTime } from './view.ts'
+import { absTime, formatBytes, highlightRegex, inRepos, relTime, repoNameOptions } from './view.ts'
 
 const api = window.api
 
@@ -38,6 +38,8 @@ export function ArchiveView({ active, paused, debug, now, onMessage }: Props) {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<ArchiveHit[]>([])
   const [searched, setSearched] = useState(false)
+  /** Repo names the results are narrowed to. Empty = all repos. */
+  const [repos, setRepos] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const [doc, setDoc] = useState<ArchiveDoc | null>(null)
@@ -84,13 +86,16 @@ export function ArchiveView({ active, paused, debug, now, onMessage }: Props) {
     }
   }, [active, query, status.version, tick])
 
+  const repoOpts = useMemo(() => repoNameOptions(hits.map((h) => h.repo), repos), [hits, repos])
+  const shown = useMemo(() => hits.filter((h) => inRepos(h.repo, repos)), [hits, repos])
+
   useEffect(() => {
-    if (openFirst && hits[0]) {
-      setOpenId(hits[0].id)
-      setSelectedId(hits[0].id)
+    if (openFirst && shown[0]) {
+      setOpenId(shown[0].id)
+      setSelectedId(shown[0].id)
       setOpenFirst(false)
     }
-  }, [openFirst, hits])
+  }, [openFirst, shown])
 
   useEffect(() => {
     if (!openId) {
@@ -129,8 +134,8 @@ export function ArchiveView({ active, paused, debug, now, onMessage }: Props) {
     scrolledTo.current = place
   }, [docId, docText, re, match])
 
-  const selectedIndex = Math.max(0, hits.findIndex((h) => h.id === selectedId))
-  const selected = hits[selectedIndex] ?? null
+  const selectedIndex = Math.max(0, shown.findIndex((h) => h.id === selectedId))
+  const selected = shown[selectedIndex] ?? null
 
   useEffect(() => {
     if (selected) listRef.current?.querySelector(`[data-id="${CSS.escape(selected.id)}"]`)?.scrollIntoView({ block: 'nearest' })
@@ -156,7 +161,7 @@ export function ArchiveView({ active, paused, debug, now, onMessage }: Props) {
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (e.target !== inputRef.current) return
       e.preventDefault()
-      const next = hits[Math.min(hits.length - 1, Math.max(0, selectedIndex + (e.key === 'ArrowDown' ? 1 : -1)))]
+      const next = shown[Math.min(shown.length - 1, Math.max(0, selectedIndex + (e.key === 'ArrowDown' ? 1 : -1)))]
       if (next) setSelectedId(next.id)
     } else if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
       e.preventDefault()
@@ -214,10 +219,11 @@ export function ArchiveView({ active, paused, debug, now, onMessage }: Props) {
           </div>
 
           <div className="archive-status">
+            <RepoFilter options={repoOpts} selected={repos} onChange={setRepos} />
             <span>
               {status.running ? `Archiving ${status.done} of ${status.total}… ` : ''}
               {status.sessions} session{status.sessions === 1 ? '' : 's'} · {formatBytes(status.bytes)}
-              {query ? ` · ${hits.length} match${hits.length === 1 ? '' : 'es'}` : ''}
+              {query ? ` · ${shown.length} match${shown.length === 1 ? '' : 'es'}` : repos.length ? ` · ${shown.length} in ${repos.length === 1 ? 'this repo' : 'these repos'}` : ''}
             </span>
             {!status.enabled && (
               <>
@@ -236,8 +242,12 @@ export function ArchiveView({ active, paused, debug, now, onMessage }: Props) {
 
           <div className={`archive-panes ${openId ? 'reading' : ''}`}>
             <div className="list archive-results" ref={listRef} role="listbox">
-              {hits.length === 0 && <div className="empty">{!searched ? 'Reading the archive…' : query ? 'No conversations match.' : status.running ? 'Archiving…' : 'Nothing archived yet.'}</div>}
-              {hits.map((h) => (
+              {shown.length === 0 && (
+                <div className="empty">
+                  {!searched ? 'Reading the archive…' : query ? 'No conversations match.' : hits.length ? `Nothing archived in ${repos.length === 1 ? 'this repo' : 'these repos'}.` : status.running ? 'Archiving…' : 'Nothing archived yet.'}
+                </div>
+              )}
+              {shown.map((h) => (
                 <div
                   key={h.id}
                   className={`row archive-row ${h.id === selected?.id ? 'selected' : ''} ${h.id === openId ? 'open' : ''}`}

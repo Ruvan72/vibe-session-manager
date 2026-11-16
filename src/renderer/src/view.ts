@@ -61,6 +61,19 @@ export function repoOptions(sessions: SessionView[], showHidden: boolean): RepoO
   return [...repos.values()].sort((a, b) => byName(a.label, b.label) || a.key.localeCompare(b.key))
 }
 
+/**
+ * The repo filter for lists that only know a repo by its name (Archive, Time): one option per name, by name,
+ * with how often it occurs. A picked repo that is not in the list stays in it with 0, so it can be unticked.
+ */
+export function repoNameOptions(names: string[], selected: string[]): RepoOption[] {
+  const counts = new Map<string, number>(selected.map((n) => [n, 0]))
+  for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1)
+  return [...counts].map(([n, count]) => ({ key: n, label: n, count })).sort((a, b) => byName(a.label, b.label) || a.key.localeCompare(b.key))
+}
+
+/** True when the repo passes the repo filter. Nothing picked = all repos. */
+export const inRepos = (name: string, selected: string[]) => !selected.length || selected.includes(name)
+
 const byName = (a: string, b: string) => a.localeCompare(b, 'en', { sensitivity: 'base' })
 
 export interface Group {

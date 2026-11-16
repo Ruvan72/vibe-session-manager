@@ -15,8 +15,10 @@ import {
   formatDuration,
   formatReset,
   groupTimeRows,
+  inRepos,
   localDayStart,
   relTime,
+  repoNameOptions,
   shiftDay,
   sumMs,
   usageLevel,
@@ -652,7 +654,7 @@ export function SettingsPanel({ info, hooks, onChange, onClose }: { info: Settin
 }
 
 /** Active time per day (spec 3.7), read from the stored day files. */
-export function TimeView({ snap, onJump, onMessage }: { snap: Snapshot; onJump(id: string): void; onMessage(m: string): void }) {
+export function TimeView({ snap, repos, onRepos, onJump, onMessage }: { snap: Snapshot; repos: string[]; onRepos(repos: string[]): void; onJump(id: string): void; onMessage(m: string): void }) {
   const today = dayKey(Date.now())
   const [date, setDate] = useState(today)
   const [day, setDay] = useState<DayFile | null>(null)
@@ -670,7 +672,9 @@ export function TimeView({ snap, onJump, onMessage }: { snap: Snapshot; onJump(i
     }
   }, [date, liveKey])
 
-  const rows = useMemo(() => (day && day.date === date ? dayRows(day) : []), [day, date])
+  const allRows = useMemo(() => (day && day.date === date ? dayRows(day) : []), [day, date])
+  const repoOpts = useMemo(() => repoNameOptions(allRows.map((r) => r.entry.repo), repos), [allRows, repos])
+  const rows = useMemo(() => allRows.filter((r) => inRepos(r.entry.repo, repos)), [allRows, repos])
   const groups = groupTimeRows(rows)
   const total = rows.reduce((sum, r) => sum + r.ms, 0)
   const working = new Set(snap.sessions.filter((s) => s.status === 'busy').map((s) => s.id))
@@ -684,7 +688,8 @@ export function TimeView({ snap, onJump, onMessage }: { snap: Snapshot; onJump(i
 
   const copy = () => {
     if (!day) return
-    void api.copyText(dayCsv(day))
+    // What is shown: with a repo filter, only those repos' sessions.
+    void api.copyText(dayCsv({ ...day, sessions: Object.fromEntries(rows.map((r) => [r.id, r.entry])) }))
     onMessage(`Copied ${rows.length} session${rows.length === 1 ? '' : 's'} for ${dayLabel(date)} as CSV.`)
   }
 
@@ -703,14 +708,19 @@ export function TimeView({ snap, onJump, onMessage }: { snap: Snapshot; onJump(i
             Today
           </button>
         )}
+        <RepoFilter options={repoOpts} selected={repos} onChange={onRepos} />
         <span className="spacer" />
-        <span className="day-total" title="Total active time this day">
+        <span className="day-total" title={repos.length ? 'Active time in the chosen repos this day' : 'Total active time this day'}>
           {formatDuration(total)}
         </span>
       </div>
 
       <div className="list">
-        {rows.length === 0 && <div className="empty">{snap.scanning ? 'Reading sessions…' : 'No active sessions this day.'}</div>}
+        {rows.length === 0 && (
+          <div className="empty">
+            {snap.scanning ? 'Reading sessions…' : allRows.length ? `No active sessions in ${repos.length === 1 ? 'this repo' : 'these repos'} this day.` : 'No active sessions this day.'}
+          </div>
+        )}
         {groups.map((g) => (
           <section key={g.repo} className="group">
             <h2 className="time-group">
