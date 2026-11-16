@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { prismaToRun } from '../../src/shared/types.ts'
+import { prismaToRun, worktreeName } from '../../src/shared/types.ts'
 import { agentCommand, claudeStreamText, createdFrom, installCommand, parseStatus, prismaOutputs, parseWorktreeList, prInText, rootState, unlinkOutward, WorkManager, workState, worktreeNameError } from '../../src/core/work.ts'
 import type { LiveStatus, WorkRun } from '../../src/shared/types.ts'
 import { tmpDir } from './helpers.ts'
@@ -67,6 +67,25 @@ describe('reading git output', () => {
   it('accepts only names that work as a folder and a branch', () => {
     expect(worktreeNameError('fix-login_2')).toBeNull()
     for (const bad of ['', 'feat/x', '-x', 'a b', 'a..b', 'x.lock', 'x.', '../up']) expect(worktreeNameError(bad)).not.toBeNull()
+  })
+
+  it('makes anything typed into a name a folder and a branch allow', () => {
+    expect(worktreeName('Årsrapport med tal')).toBe('Aarsrapport-med-tal')
+    expect(worktreeName('ÆBLE på grød')).toBe('AEBLE-paa-groed')
+    expect(worktreeName('Café crème')).toBe('Cafe-creme')
+    expect(worktreeName('feat/login: fix  it!')).toBe('feat-login-fix-it-')
+    expect(worktreeName('  --.x..y')).toBe('x.y')
+    expect(worktreeName('日本')).toBe('')
+    // While typing, a word may end in a dash so the next can follow; done, it is taken off.
+    expect(worktreeName('fix ')).toBe('fix-')
+    expect(worktreeName('fix ', true)).toBe('fix')
+    expect(worktreeName('v1.', true)).toBe('v1')
+    expect(worktreeName('x.lock.', true)).toBe('x-lock')
+    expect(worktreeName('a'.repeat(100))).toHaveLength(80)
+    for (const raw of ['Årsrapport med tal', 'feat/login: fix  it!', ' .a.lock', 'x.lock.', '-_ä-', 'Ø'.repeat(60)]) {
+      const name = worktreeName(raw, true)
+      if (name) expect(worktreeNameError(name)).toBeNull()
+    }
   })
 
   it('shows what the agent says and runs', () => {
