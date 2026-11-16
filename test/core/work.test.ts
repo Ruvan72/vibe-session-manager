@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { agentCommand, claudeStreamText, createdFrom, installCommand, parseStatus, parseWorktreeList, prInText, rootState, unlinkNodeModules, WorkManager, workState, worktreeNameError } from '../../src/core/work.ts'
+import { prismaToRun } from '../../src/shared/types.ts'
+import { agentCommand, claudeStreamText, createdFrom, installCommand, parseStatus, prismaOutputs, parseWorktreeList, prInText, rootState, unlinkOutward, WorkManager, workState, worktreeNameError } from '../../src/core/work.ts'
 import type { LiveStatus, WorkRun } from '../../src/shared/types.ts'
 import { tmpDir } from './helpers.ts'
 
@@ -532,7 +533,7 @@ describe('what a new worktree brings along', () => {
 
   it('finds the .env files, the node_modules folders and the install command', async () => {
     const { repo, work } = withPackages()
-    expect(await work.setupInfo(repo)).toEqual({ envFiles: ['.env', 'apps/web/.env.local'], nodeModules: ['', 'apps/web'], install: 'npm install' })
+    expect(await work.setupInfo(repo)).toEqual({ envFiles: ['.env', 'apps/web/.env.local'], nodeModules: ['', 'apps/web'], install: 'npm install', prisma: [] })
     writeFileSync(path.join(repo, 'pnpm-lock.yaml'), '')
     expect(installCommand(repo)).toBe('pnpm install')
     expect(installCommand(path.join(repo, 'apps'))).toBeNull()
@@ -540,14 +541,14 @@ describe('what a new worktree brings along', () => {
 
   it('copies the .env files and links node_modules, and cleanup leaves the repo its packages', async () => {
     const { repo, work, item } = withPackages()
-    const made = await work.create(repo, 'linked', { copyEnv: true, deps: 'link' })
+    const made = await work.create(repo, 'linked', { copyEnv: true, deps: 'link', prisma: false })
     expect(readFileSync(path.join(made.path, '.env'), 'utf8')).toBe('KEY=secret\n')
     expect(readFileSync(path.join(made.path, 'apps', 'web', '.env.local'), 'utf8')).toBe('WEB=1\n')
     expect(readFileSync(path.join(made.path, 'node_modules', 'pkg', 'index.js'), 'utf8')).toContain('module.exports')
     expect(existsSync(path.join(made.path, 'apps', 'web', 'node_modules', 'pkg', 'index.js'))).toBe(true)
     // Neither the copies nor the links count as work to commit.
     expect(made).toMatchObject({ state: 'new', changed: 0 })
-    expect((await work.overview()).setup).toEqual({ copyEnv: true, deps: 'link' })
+    expect((await work.overview()).setup).toEqual({ copyEnv: true, deps: 'link', prisma: false })
     expect(work.readJournal()[0]).toMatchObject({ action: 'create', detail: 'copied 2 .env files, linked node_modules' })
     const log = readFileSync(work.log.file, 'utf8')
     expect(log).toMatch(/\[copied apps\/web\/\.env\.local from /)
@@ -570,7 +571,7 @@ describe('what a new worktree brings along', () => {
     expect(existsSync(path.join(made.path, 'node_modules'))).toBe(false)
   })
 
-  it('removes only links named node_modules, and does not look inside real ones', () => {
+  it('removes a link named node_modules, and does not look deep inside real ones', () => {
     const root = tmpDir()
     const target = path.join(root, 'target')
     mkdirSync(path.join(target, 'pkg'), { recursive: true })
@@ -578,9 +579,91 @@ describe('what a new worktree brings along', () => {
     mkdirSync(path.join(root, 'wt', 'b'), { recursive: true })
     symlinkSync(target, path.join(root, 'wt', 'b', 'node_modules'), 'junction')
     symlinkSync(target, path.join(root, 'wt', 'a', 'node_modules', 'inner', 'node_modules'), 'junction')
-    expect(unlinkNodeModules(path.join(root, 'wt'))).toEqual([path.join(root, 'wt', 'b', 'node_modules')])
+    expect(unlinkOutward(path.join(root, 'wt'))).toEqual([path.join(root, 'wt', 'b', 'node_modules')])
     expect(existsSync(path.join(target, 'pkg'))).toBe(true)
     expect(existsSync(path.join(root, 'wt', 'a', 'node_modules', 'inner', 'node_modules'))).toBe(true)
+  })
+
+  it('removes the links a build leaves at the top of a real node_modules, such as .next/node_modules', () => {
+    const root = tmpDir()
+    const wt = path.join(root, 'wt')
+    const target = path.join(root, 'target')
+    mkdirSync(path.join(target, 'pkg'), { recursive: true })
+    mkdirSync(path.join(wt, 'src', 'own'), { recursive: true })
+    mkdirSync(path.join(wt, '.next', 'node_modules', '@scope'), { recursive: true })
+    mkdirSync(path.join(wt, '.next', 'dev', 'node_modules'), { recursive: true })
+    const out = [
+      path.join(wt, '.next', 'dev', 'node_modules', 'pkg-1a2b'),
+      path.join(wt, '.next', 'node_modules', '@scope', 'pkg-3c4d'),
+      path.join(wt, '.next', 'node_modules', 'pkg-1a2b'),
+      path.join(wt, 'src', 'elsewhere')
+    ]
+    for (const link of out) symlinkSync(target, link, 'junction')
+    // A link that stays inside the worktree is left alone: git can only delete what goes anyway.
+    const within = path.join(wt, '.next', 'node_modules', 'own-5e6f')
+    symlinkSync(path.join(wt, 'src', 'own'), within, 'junction')
+    expect(unlinkOutward(wt).sort()).toEqual(out.sort())
+    expect(existsSync(path.join(target, 'pkg'))).toBe(true)
+    expect(existsSync(within)).toBe(true)
+  })
+
+  it('finds the Prisma schemas, their commands and the outputs a new worktree lacks', async () => {
+    const { repo, work } = withPackages()
+    const client = 'generator client {\n  provider = "prisma-client-js"\n}\n'
+    const data = 'datasource db {\n  provider = "sqlite"\n  url = "file:dev.db"\n}\n'
+    expect(prismaOutputs(data)).toBeNull()
+    expect(prismaOutputs(client + data)).toEqual([])
+    expect(prismaOutputs('// generator old {\n//   output = "../old"\n// }\ngenerator client {\n  provider = "prisma-client"\n  output   = "../src/generated/prisma"\n}\n')).toEqual(['../src/generated/prisma'])
+
+    // The root schema is where prisma looks and generates into node_modules.
+    mkdirSync(path.join(repo, 'prisma'))
+    writeFileSync(path.join(repo, 'prisma', 'schema.prisma'), client + data)
+    // The workspace's is elsewhere and generates into two folders, one of which git tracks.
+    mkdirSync(path.join(repo, 'apps', 'web', 'db', 'types'), { recursive: true })
+    writeFileSync(
+      path.join(repo, 'apps', 'web', 'db', 'main.prisma'),
+      data + 'generator client {\n  provider = "prisma-client"\n  output = "../src/generated"\n}\ngenerator types {\n  provider = "x"\n  output = "./types"\n}\n'
+    )
+    writeFileSync(path.join(repo, 'apps', 'web', 'db', 'types', 'index.ts'), 'export {}\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'prisma')
+
+    const { prisma } = await work.setupInfo(repo)
+    expect(prisma).toEqual([
+      { dir: 'apps/web', command: 'npx prisma generate --schema db/main.prisma', outputs: ['apps/web/src/generated'] },
+      { dir: '', command: 'npx prisma generate', outputs: [] }
+    ])
+    expect(prismaToRun(prisma, 'none')).toEqual([])
+    expect(prismaToRun(prisma, 'link').map((p) => p.dir)).toEqual(['apps/web'])
+    expect(prismaToRun(prisma, 'install')).toHaveLength(2)
+
+    writeFileSync(path.join(repo, 'apps', 'web', 'package.json'), '{ "name": "web", "version": "1.0.0", "private": true, "prisma": { "schema": "db/main.prisma" } }\n')
+    writeFileSync(path.join(repo, 'pnpm-lock.yaml'), '')
+    expect((await work.setupInfo(repo)).prisma.map((p) => p.command)).toEqual(['pnpm exec prisma generate', 'pnpm exec prisma generate'])
+  })
+
+  it('runs prisma generate after the install as one run, and not at all when nothing needs it', async () => {
+    const { repo, work, finished } = withPackages()
+    // A stand-in for prisma that npx finds in the package itself.
+    writeFileSync(path.join(repo, 'package.json'), '{ "name": "demo", "version": "1.0.0", "private": true, "bin": { "prisma": "fake-prisma.js" } }\n')
+    writeFileSync(path.join(repo, 'fake-prisma.js'), '#!/usr/bin/env node\nconsole.log("fake prisma " + process.argv.slice(2).join(" "))\n')
+    mkdirSync(path.join(repo, 'prisma'))
+    writeFileSync(path.join(repo, 'prisma', 'schema.prisma'), 'generator client {\n  provider = "prisma-client-js"\n}\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'prisma')
+
+    const made = await work.create(repo, 'shared', { copyEnv: false, deps: 'link', prisma: true })
+    // The client is in the node_modules the link shares, so there is nothing to run.
+    await work.prepare(made.key, { install: false, prisma: true })
+    expect((await work.overview()).run).toBeNull()
+
+    const done = finished()
+    await work.prepare(made.key, { install: true, prisma: true })
+    const run = await done
+    expect(run).toMatchObject({ kind: 'install', status: 'ok', title: 'npm install, then npx prisma generate in shared' })
+    expect(run.text).toMatch(/^\$ npm install\n[^]*\$ npx prisma generate\n[^]*fake prisma generate/)
+    expect(readFileSync(work.log.file, 'utf8')).toMatch(/shared> npm install\n[^]*?\[exit 0 · \d+ ms\]\n[^]*shared> npx prisma generate\n/)
+    expect(work.readJournal()[0]).toMatchObject({ action: 'install', ok: true, detail: 'npm install, then npx prisma generate' })
   })
 
   it('runs the install in the worktree and logs it', async () => {
