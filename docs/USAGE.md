@@ -154,14 +154,20 @@ The Markdown leaves out what the agent was told behind the scenes, such as remin
 
 The **Work** tab takes a piece of work from start to finish in its own git worktree, so it does not get in the way of what is checked out in the repo.
 
-**Create worktree** asks for a repo and a name. The repos are those with a session in the last 30 days and those you made a worktree in before, with the last one used picked; **Other folder…** adds one. The app then runs `git worktree add`, which makes the folder `<repo>/.claude/worktrees/<name>` on a new branch `<name>`, from the branch that is checked out in the repo's root. It opens the folder in your editor, and the worktree shows in the list. You can type any name: as you type it is made into letters, digits, dash, underscore and dot, so `Årsrapport med tal` becomes `Aarsrapport-med-tal`. While it is being created, the **Create** button shows a turning ring, and so does the output of an install that follows.
+**Create worktree** asks for a repo and a name. The repos are those with a session in the last 30 days and those you made a worktree in before, with the last one used picked; **Other folder…** adds one. The app then runs `git worktree add`, which makes the folder `<repo>/.claude/worktrees/<name>` on a new branch `<name>`, from the branch that is checked out in the repo's root. It opens the folder in your editor, and the worktree shows in the list. You can type any name: as you type it is made into letters, digits, dash, underscore and dot, so `Årsrapport med tal` becomes `Aarsrapport-med-tal`. While it is being created, the **Create** button shows a turning ring, and so does the output of an install or `prisma generate` that follows.
 
-A new worktree has only the files git tracks, so the form has two options for what else to bring along. The app remembers what you chose last.
+A new worktree has only the files git tracks, so the form has options for what else to bring along. The app remembers what you chose last.
 
 - **Copy .env files** copies the repo's `.env*` files that git does not track, from the root and from subfolders, to the same places in the worktree. Hover the option to see which. Files inside `node_modules` are left out, and a file that is already in the worktree is not overwritten.
 - **node_modules** can be left out, linked or installed:
-  - **Link to the repo's** makes a link (a junction on Windows) from the worktree to each `node_modules` folder the repo has next to a tracked `package.json`. It is instant and takes no disk space, but the worktree and the repo then share the packages: an install in either changes both. **Remove such a worktree with Clean up on this tab.** It takes the links away first. `git worktree remove` on its own follows the link and deletes the repo's `node_modules`.
+  - **Link to the repo's** makes a link (a junction on Windows) from the worktree to each `node_modules` folder the repo has next to a tracked `package.json`. It is instant and takes no disk space, but the worktree and the repo then share the packages: an install in either changes both. **Remove such a worktree with Clean up on this tab.** It takes the links away first, and with them the links a build leaves behind that lead out of the worktree, such as the ones Next.js puts in `.next/node_modules`. `git worktree remove` on its own follows the link and deletes the repo's `node_modules`.
   - **Run npm install** runs the install in the worktree's root after it is created, with its output on the tab. With a `pnpm-lock.yaml`, `yarn.lock` or `bun.lock` in the root it runs that package manager's install instead.
+- **Run prisma generate** shows when the repo tracks a Prisma schema with a generator, and can be ticked when a new worktree would lack what the schema generates:
+  - With **Run npm install**, always: it runs after the install, as part of the same output.
+  - With **Link to the repo's**, only when a generator has an `output` outside `node_modules` that git does not track, such as `src/generated/prisma`. A client that is generated into `node_modules` comes along with the link.
+  - With node_modules left out there is no Prisma to run.
+
+  The command is `npx prisma generate`, or `pnpm exec`, `yarn` or `bunx` by the lockfile. It runs in the package folder the schema belongs to, with `--schema` when the schema is not where Prisma looks by itself. Hover the option to see the command and why it is needed or not.
  If the repo does not ignore `.claude/worktrees` yet, the app adds it to `.git/info/exclude`, which is local and never committed.
 
 **Work in progress** lists every linked worktree of those repos, also the ones Claude Code or you made, and the repo's own folder when it has work in it, with where each stands:

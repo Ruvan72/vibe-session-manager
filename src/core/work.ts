@@ -5,11 +5,11 @@
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { appendFileSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
+import { appendFileSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import type { LiveStatus, WorkAgent, WorkCreateOptions, WorkItem, WorkJournalEntry, WorkOverview, WorkPr, WorkRepo, WorkRun, WorkSetupInfo, WorkState } from '../shared/types.ts'
+import { prismaToRun, type LiveStatus, type WorkAgent, type WorkCreateOptions, type WorkItem, type WorkJournalEntry, type WorkOverview, type WorkPr, type WorkPrisma, type WorkRepo, type WorkRun, type WorkSetupInfo, type WorkState } from '../shared/types.ts'
 import { writeJson } from './persist.ts'
 import { pathKey } from './repo.ts'
 
@@ -371,6 +371,23 @@ export function installCommand(dir: string): string | null {
   return `${LOCKFILES.find(([file]) => existsSync(path.join(dir, file)))?.[1] ?? 'npm'} install`
 }
 
+/** How each package manager runs a program of an installed package. */
+const RUNNERS: Record<string, string> = { npm: 'npx', pnpm: 'pnpm exec', yarn: 'yarn', bun: 'bunx' }
+/** Where prisma finds a schema without being told. */
+const PRISMA_DEFAULTS = ['prisma/schema.prisma', 'schema.prisma']
+const PRISMA_CONFIGS = ['ts', 'js', 'mjs', 'cjs', 'mts', 'cts'].map((ext) => `prisma.config.${ext}`)
+
+/**
+ * The output folders the generators in a Prisma schema file name, as written there; null when the file has
+ * no generator. A generator without an output writes into node_modules, and one that reads it from the
+ * environment is left out.
+ */
+export function prismaOutputs(text: string): string[] | null {
+  const blocks = [...text.replace(/^\s*\/\/.*$/gm, '').matchAll(/^\s*generator\s+\w+\s*\{([^}]*)\}/gm)]
+  if (!blocks.length) return null
+  return blocks.flatMap((b) => b[1].match(/^\s*output\s*=\s*"([^"]+)"/m)?.[1] ?? [])
+}
+
 function isLink(p: string): boolean {
   try {
     return lstatSync(p).isSymbolicLink()
@@ -380,13 +397,29 @@ function isLink(p: string): boolean {
 }
 
 /**
- * Takes away every link named node_modules in a worktree and returns their paths. This must happen before
- * git removes the worktree: git deletes through a junction, which would empty the node_modules it points
- * to. Real node_modules folders are not looked into.
+ * Takes away the links in a worktree that lead out of it and returns their paths. This must happen before
+ * git removes the worktree: git deletes through a junction, which would empty the folder it points to.
+ * A link named node_modules always goes. Any other link goes when its target is outside the worktree or
+ * missing. A real node_modules folder is only looked into for the packages at its top, scoped ones
+ * included, which is where a build tool puts its links (Next.js fills .next/node_modules with them).
  */
-export function unlinkNodeModules(root: string): string[] {
+export function unlinkOutward(root: string): string[] {
   const removed: string[] = []
-  const walk = (dir: string) => {
+  let base: string
+  try {
+    base = pathKey(realpathSync(root)) + path.sep
+  } catch {
+    return removed
+  }
+  const outward = (p: string): boolean => {
+    try {
+      return !(pathKey(realpathSync(p)) + path.sep).startsWith(base)
+    } catch {
+      return true
+    }
+  }
+  /** `packages` is 0 outside a real node_modules, 1 at its top, 2 inside a scope folder there. */
+  const walk = (dir: string, packages: 0 | 1 | 2) => {
     let entries
     try {
       entries = readdirSync(dir, { withFileTypes: true })
@@ -396,13 +429,20 @@ export function unlinkNodeModules(root: string): string[] {
     for (const e of entries) {
       const p = path.join(dir, e.name)
       if (e.isSymbolicLink()) {
-        if (e.name !== 'node_modules') continue
-        unlinkSync(p)
+        if (e.name !== 'node_modules' && !outward(p)) continue
+        try {
+          unlinkSync(p)
+        } catch {
+          // A link to a folder that will not go as a file goes as an empty folder; the target is not touched.
+          rmdirSync(p)
+        }
         removed.push(p)
-      } else if (e.isDirectory() && e.name !== 'node_modules' && e.name !== '.git') walk(p)
+      } else if (!e.isDirectory() || e.name === '.git') continue
+      else if (packages === 0) walk(p, e.name === 'node_modules' ? 1 : 0)
+      else if (packages === 1 && e.name.startsWith('@')) walk(p, 2)
     }
   }
-  walk(root)
+  walk(root, 0)
   return removed
 }
 
@@ -580,7 +620,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       lastRepo: typeof raw?.lastRepo === 'string' ? raw.lastRepo : null,
       repos: Array.isArray(raw?.repos) ? raw.repos.filter((r: unknown) => typeof r === 'string') : [],
       bases: raw?.bases && typeof raw.bases === 'object' ? raw.bases : {},
-      setup: { copyEnv: raw?.setup?.copyEnv !== false, deps: ['link', 'install'].includes(raw?.setup?.deps) ? raw.setup.deps : 'none' }
+      setup: { copyEnv: raw?.setup?.copyEnv !== false, deps: ['link', 'install'].includes(raw?.setup?.deps) ? raw.setup.deps : 'none', prisma: raw?.setup?.prisma !== false }
     }
   }
 
@@ -876,7 +916,50 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       .map((p) => path.posix.dirname(p).replace(/^\.$/, ''))
       .filter((dir) => existsSync(path.join(repoPath, dir, 'node_modules')))
       .sort()
-    return { envFiles: envFiles.slice(0, 200), nodeModules: nodeModules.slice(0, 200), install: installCommand(repoPath) }
+    const install = installCommand(repoPath)
+    const packageDirs = packages.map((p) => path.posix.dirname(p).replace(/^\.$/, ''))
+
+    // Prisma: each tracked schema file with a generator, the command for it, and where it generates to.
+    const prisma = new Map<string, WorkPrisma>()
+    const runner = RUNNERS[(install ?? 'npm').split(' ')[0]]
+    for (const rel of (await list(['--', ':(glob)**/*.prisma'])).slice(0, 100)) {
+      let text: string
+      try {
+        text = readFileSync(path.join(repoPath, rel), 'utf8')
+      } catch {
+        continue
+      }
+      const written = prismaOutputs(text)
+      if (!written) continue
+      // It runs in the nearest package folder above the schema, which is where its prisma is installed.
+      const dir = packageDirs.filter((d) => d && rel.startsWith(d + '/')).sort((a, b) => b.length - a.length)[0] ?? ''
+      const inDir = dir ? rel.slice(dir.length + 1) : rel
+      let command = `${runner} prisma generate`
+      if (!PRISMA_DEFAULTS.includes(inDir) && !this.prismaConfigured(path.join(repoPath, dir))) {
+        // A schema in several files is named by its folder; the file with the datasource is one on its own.
+        const schema = /^\s*datasource\s+\w+\s*\{/m.test(text) ? inDir : path.posix.dirname(inDir)
+        command += ` --schema ${/\s/.test(schema) ? `"${schema}"` : schema}`
+      }
+      const known = prisma.get(`${dir}|${command}`) ?? { dir, command, outputs: [] }
+      prisma.set(`${dir}|${command}`, known)
+      for (const o of written) {
+        const out = path.posix.normalize(path.posix.join(path.posix.dirname(rel), o.replace(/\\/g, '/'))).replace(/\/$/, '')
+        if (path.posix.isAbsolute(out) || /^[a-z]:/i.test(out) || out === '.' || out.startsWith('..') || out.split('/').includes('node_modules')) continue
+        // What git tracks is in the worktree already.
+        if (!known.outputs.includes(out) && !(await list(['--', out])).length) known.outputs.push(out)
+      }
+    }
+    return { envFiles: envFiles.slice(0, 200), nodeModules: nodeModules.slice(0, 200), install, prisma: [...prisma.values()] }
+  }
+
+  /** The package folder says itself where its Prisma schema is: in a prisma.config file or in package.json. */
+  private prismaConfigured(dir: string): boolean {
+    if (PRISMA_CONFIGS.some((f) => existsSync(path.join(dir, f)))) return true
+    try {
+      return !!JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))?.prisma?.schema
+    } catch {
+      return false
+    }
   }
 
   /** Copies the repo's untracked .env* files into the worktree, leaving alone what is already there. */
@@ -923,21 +1006,45 @@ export class WorkManager extends EventEmitter<WorkEvents> {
   }
 
   /** Runs the package manager's install in the worktree. Returns when it has started. */
-  async install(key: string): Promise<void> {
-    const { item } = await this.fresh(key)
-    if (item.state === 'orphaned') throw new Error('The folder of this worktree is gone.')
-    const command = installCommand(item.path)
-    if (!command) throw new Error('There is no package.json in the root of this worktree.')
-    const run = this.startRun(item, 'install', `${command} in ${item.name}`, null, `${command} in ${item.name} (${item.repo})`)
-    this.say(run, `$ ${command}\n`)
-    const child = spawn(command, { cwd: item.path, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
-    void this.stream(run, child, item.path, command).then((code) => {
-      this.journalOf(item, 'install', code === 0, { detail: command, log: this.sections.get(run)?.id })
-      this.endRun(run, code === 0 ? 'ok' : 'failed')
-    })
+  install(key: string): Promise<void> {
+    return this.prepare(key, { install: true, prisma: false })
   }
 
-  async create(repoPath: string, rawName: string, opts: WorkCreateOptions = { copyEnv: false, deps: 'none' }): Promise<WorkItem> {
+  /**
+   * Gets a worktree's packages ready as one run: the package manager's install, then `prisma generate`
+   * for each schema that needs it. Without the install, node_modules is taken to be linked. Returns when
+   * the first command has started; a command that fails ends the run.
+   */
+  async prepare(key: string, what: { install: boolean; prisma: boolean }): Promise<void> {
+    const { item } = await this.fresh(key)
+    if (item.state === 'orphaned') throw new Error('The folder of this worktree is gone.')
+    const steps: { command: string; cwd: string; dir: string }[] = []
+    if (what.install) {
+      const command = installCommand(item.path)
+      if (!command) throw new Error('There is no package.json in the root of this worktree.')
+      steps.push({ command, cwd: item.path, dir: '' })
+    }
+    if (what.prisma) {
+      const { prisma } = await this.setupInfo(item.path)
+      for (const p of prismaToRun(prisma, what.install ? 'install' : 'link')) steps.push({ command: p.command, cwd: path.join(item.path, p.dir), dir: p.dir })
+    }
+    if (!steps.length) return
+    const all = steps.map((s) => s.command).join(', then ')
+    const run = this.startRun(item, 'install', `${all} in ${item.name}`, null, `${all} in ${item.name} (${item.repo})`)
+    void (async () => {
+      let code = 0
+      for (const step of steps) {
+        if (code !== 0 || run.status !== 'running') break
+        this.say(run, `${step.dir ? `${step.dir} ` : ''}$ ${step.command}\n`)
+        const child = spawn(step.command, { cwd: step.cwd, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        code = await this.stream(run, child, step.cwd, step.command)
+      }
+      this.journalOf(item, 'install', code === 0, { detail: all, log: this.sections.get(run)?.id })
+      this.endRun(run, code === 0 ? 'ok' : 'failed')
+    })()
+  }
+
+  async create(repoPath: string, rawName: string, opts: WorkCreateOptions = { copyEnv: false, deps: 'none', prisma: false }): Promise<WorkItem> {
     const name = rawName.trim()
     const bad = worktreeNameError(name)
     if (bad) throw new Error(bad)
@@ -957,7 +1064,7 @@ export class WorkManager extends EventEmitter<WorkEvents> {
       if (copied) brought.push(`copied ${plural(copied, '.env file')}`)
       if (opts.deps === 'link' && (await this.linkNodeModules(repoPath, dir, info.nodeModules))) brought.push('linked node_modules')
     }
-    this.state.setup = { copyEnv: !!opts.copyEnv, deps: opts.deps }
+    this.state.setup = { copyEnv: !!opts.copyEnv, deps: opts.deps, prisma: !!opts.prisma }
     this.rememberRepo(repoPath)
     this.journal({ action: 'create', repo: path.basename(repoPath), repoPath, worktree: name, branch: name, base, ok: true, detail: brought.join(', ') || undefined, log: section.id })
     const scan = await this.scanRepo(repoPath)
@@ -1259,8 +1366,8 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     try {
       if (item.state === 'orphaned') await this.act(item.repoPath, ['worktree', 'prune'])
       else {
-        // First, or git would delete the repo's own node_modules through the link.
-        for (const link of unlinkNodeModules(item.path)) this.log.note(`removed the link ${link}`)
+        // First, or git would delete what the links point to, such as the repo's own node_modules.
+        for (const link of unlinkOutward(item.path)) this.log.note(`removed the link ${link}`)
         await this.act(item.repoPath, ['worktree', 'remove', ...(force ? ['--force'] : []), '--', item.path], 120_000)
       }
     } catch (e: any) {

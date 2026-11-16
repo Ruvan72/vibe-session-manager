@@ -350,6 +350,27 @@ export interface WorkCreateOptions {
    * manager's install in the worktree.
    */
   deps: 'none' | 'link' | 'install'
+  /** Run `prisma generate` in the worktree when it would otherwise lack what the schema generates. */
+  prisma: boolean
+}
+
+/** A Prisma schema of the repo, and what it takes to generate from it. */
+export interface WorkPrisma {
+  /** The package folder the command runs in, relative to the repo root ('' is the root). */
+  dir: string
+  /** The command, such as `npx prisma generate`. */
+  command: string
+  /**
+   * The folders it generates into that are outside node_modules and not tracked by git, relative to the
+   * repo root. A new worktree lacks these also when node_modules is linked.
+   */
+  outputs: string[]
+}
+
+/** The schemas `prisma generate` has to run for, by what the worktree gets for node_modules. */
+export function prismaToRun(prisma: WorkPrisma[], deps: WorkCreateOptions['deps']): WorkPrisma[] {
+  // Without node_modules there is no prisma to run. A link shares the client that is generated into node_modules.
+  return deps === 'install' ? prisma : deps === 'link' ? prisma.filter((p) => p.outputs.length > 0) : []
 }
 
 /** Letters that are written out with plain ones, rather than losing a mark: Å is Aa, not A. */
@@ -388,6 +409,8 @@ export interface WorkSetupInfo {
   nodeModules: string[]
   /** The install command for the root package.json, or null when there is none. */
   install: string | null
+  /** The Prisma schemas git tracks that have a generator; empty when the repo does not use Prisma. */
+  prisma: WorkPrisma[]
 }
 
 /** The part of the command log to read: what was run for one worktree (its key), or one action of the history (its log id). */

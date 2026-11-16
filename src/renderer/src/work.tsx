@@ -3,14 +3,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DebugActions } from '../../shared/api.ts'
-import { worktreeName, type WorkAgent, type WorkCreateOptions, type WorkItem, type WorkJournalEntry, type WorkLogTail, type WorkOverview, type WorkResult, type WorkRun, type WorkSetupInfo, type WorkState } from '../../shared/types.ts'
+import { prismaToRun, worktreeName, type WorkAgent, type WorkCreateOptions, type WorkItem, type WorkJournalEntry, type WorkLogTail, type WorkOverview, type WorkResult, type WorkRun, type WorkSetupInfo, type WorkState } from '../../shared/types.ts'
 import { AgentIcon, LightIcon, RepoFilter, TreeIcon } from './components.tsx'
 import { absTime, relTime, WORK_STATE_LABEL, workDetail, workJournalText } from './view.ts'
 
 const api = window.api
 
 const AGENT_NAME: Record<WorkAgent, string> = { claude: 'Claude', codex: 'Codex' }
-const NO_SETUP: WorkSetupInfo = { envFiles: [], nodeModules: [], install: null }
+const NO_SETUP: WorkSetupInfo = { envFiles: [], nodeModules: [], install: null, prisma: [] }
 const RUN_STATUS: Record<WorkRun['status'], string> = { running: 'Running…', ok: 'Done', failed: 'Failed', stopped: 'Stopped' }
 const PICK = '\u0000pick'
 const REFRESH_MS = 20_000
@@ -201,12 +201,23 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     }
   }, [creating, repoPath])
 
-  const wanted = chosen ?? ov?.setup ?? { copyEnv: true, deps: 'none' as const }
+  const wanted = chosen ?? ov?.setup ?? { copyEnv: true, deps: 'none' as const, prisma: true }
   // An option the repo has nothing for falls back to leaving it out.
-  const opts: WorkCreateOptions = {
-    copyEnv: wanted.copyEnv && setup.envFiles.length > 0,
-    deps: (wanted.deps === 'link' && !setup.nodeModules.length) || (wanted.deps === 'install' && !setup.install) ? 'none' : wanted.deps
-  }
+  const deps: WorkCreateOptions['deps'] = (wanted.deps === 'link' && !setup.nodeModules.length) || (wanted.deps === 'install' && !setup.install) ? 'none' : wanted.deps
+  // The schemas a worktree made with these options would lack the generated code of.
+  const prisma = prismaToRun(setup.prisma, deps)
+  const opts: WorkCreateOptions = { copyEnv: wanted.copyEnv && setup.envFiles.length > 0, deps, prisma: wanted.prisma && prisma.length > 0 }
+  const prismaTitle = prisma.length
+    ? [
+        `Runs in the worktree${deps === 'install' ? ' after the install' : ''}:`,
+        ...prisma.map((p) => `${p.dir ? `${p.dir}: ` : ''}${p.command}`),
+        deps === 'install'
+          ? 'A fresh install does not always generate the Prisma client.'
+          : `The schema generates into ${[...new Set(prisma.flatMap((p) => p.outputs))].join(', ')}, which git does not track, so a new worktree lacks it.`
+      ].join('\n')
+    : deps === 'none'
+      ? 'There is nothing to run prisma with: link or install node_modules.'
+      : "Not needed: the client is generated into node_modules, which the link shares with the repo's."
   const agent = ov?.agent ?? null
 
   /** Runs an action, shows what it says, and reads the list again. */
@@ -242,7 +253,7 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
 
   const create = async () => {
     if (!repoPath || !finalName || busy) return
-    const res = await act('create', () => api.createWork(repoPath, finalName, opts))
+    const res = await act('create', () => api.createWork(repoPath, finalName, { ...opts, prisma: wanted.prisma }))
     if (res.ok) {
       setName('')
       setCreating(false)
@@ -495,6 +506,12 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
                 </option>
               </select>
             </label>
+            {setup.prisma.length > 0 && (
+              <label className={`work-check ${prisma.length ? '' : 'off'}`} title={prismaTitle}>
+                <input type="checkbox" checked={opts.prisma} disabled={!prisma.length} onChange={(e) => setChosen({ ...wanted, prisma: e.target.checked })} />
+                Run prisma generate{prisma.length > 1 ? ` (${prisma.length})` : ''}
+              </label>
+            )}
           </div>
           <p className="work-hint">
             {picked ? (
