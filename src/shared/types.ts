@@ -352,6 +352,34 @@ export interface WorkCreateOptions {
   deps: 'none' | 'link' | 'install'
 }
 
+/** Letters that are written out with plain ones, rather than losing a mark: Å is Aa, not A. */
+const SPELLED: Record<string, string> = { æ: 'ae', ø: 'oe', å: 'aa', ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss', œ: 'oe', þ: 'th', ð: 'd', đ: 'd', ł: 'l', ı: 'i' }
+
+/**
+ * Anything typed, made into a name that works as a folder and a git branch: "Årsrapport med tal" is
+ * "Aarsrapport-med-tal". Letters lose their accents, the rest becomes a dash. While typing (done false)
+ * it may end in a dash or dot, so the next word can follow; done, those are taken off.
+ */
+export function worktreeName(raw: string, done = false): string {
+  let s = raw.replace(/[æøåäöüßœþðđłı]/giu, (c, i: number) => {
+    const lower = c.toLowerCase()
+    const out = SPELLED[lower]
+    if (!out || c === lower) return out ?? c
+    // A capital in a word of capitals stays all capitals (ÅR is AAR), else only its first letter is one.
+    const next = raw[i + 1]
+    return next && next !== next.toLowerCase() ? out.toUpperCase() : out[0].toUpperCase() + out.slice(1)
+  })
+  s = s
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[^A-Za-z0-9]+/, '')
+    .slice(0, 80)
+  return done ? s.replace(/[-._]+$/, '').replace(/\.lock$/, '-lock') : s
+}
+
 /** What a repo has that the options can bring along. */
 export interface WorkSetupInfo {
   /** Untracked .env* files, relative to the repo root. */

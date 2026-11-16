@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DebugActions } from '../../shared/api.ts'
-import type { WorkAgent, WorkCreateOptions, WorkItem, WorkJournalEntry, WorkLogTail, WorkOverview, WorkResult, WorkRun, WorkSetupInfo, WorkState } from '../../shared/types.ts'
+import { worktreeName, type WorkAgent, type WorkCreateOptions, type WorkItem, type WorkJournalEntry, type WorkLogTail, type WorkOverview, type WorkResult, type WorkRun, type WorkSetupInfo, type WorkState } from '../../shared/types.ts'
 import { AgentIcon, LightIcon, RepoFilter, TreeIcon } from './components.tsx'
 import { absTime, relTime, WORK_STATE_LABEL, workDetail, workJournalText } from './view.ts'
 
@@ -128,6 +128,10 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
   const runRef = useRef<HTMLPreElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+  /** Where the caret goes once the adjusted name is in the field, so it does not jump to the end. */
+  const caretRef = useRef<number | null>(null)
+  /** True while an accent or IME is composing a letter, which is adjusted when it is done. */
+  const composingRef = useRef(false)
 
   const load = useCallback(async (fetch = false) => {
     const o = await api.getWork({ fetch })
@@ -218,9 +222,27 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
     }
   }
 
+  // The name as it is made: what the field shows, without a dash or dot it ends in while typing.
+  const finalName = worktreeName(name, true)
+
+  /** Takes what is in the name field, adjusted to the characters a folder and a branch allow. */
+  const typeName = (el: HTMLInputElement) => {
+    if (composingRef.current) return setName(el.value)
+    const next = worktreeName(el.value)
+    if (next !== el.value && el.selectionStart !== null) caretRef.current = Math.min(worktreeName(el.value.slice(0, el.selectionStart)).length, next.length)
+    setName(next)
+  }
+
+  useLayoutEffect(() => {
+    const el = nameRef.current
+    if (caretRef.current === null || !el) return
+    el.setSelectionRange(caretRef.current, caretRef.current)
+    caretRef.current = null
+  }, [name])
+
   const create = async () => {
-    if (!repoPath || !name.trim() || busy) return
-    const res = await act('create', () => api.createWork(repoPath, name, opts))
+    if (!repoPath || !finalName || busy) return
+    const res = await act('create', () => api.createWork(repoPath, finalName, opts))
     if (res.ok) {
       setName('')
       setCreating(false)
@@ -401,6 +423,7 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
       {creating && (
         <form
           className="work-create"
+          aria-busy={busy === 'create'}
           onSubmit={(e) => {
             e.preventDefault()
             void create()
@@ -425,11 +448,31 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
           </label>
           <label className="grow">
             <span>Name</span>
-            <input ref={nameRef} value={name} placeholder="fix-login" spellCheck={false} maxLength={80} onChange={(e) => setName(e.target.value)} />
+            <input
+              ref={nameRef}
+              value={name}
+              placeholder="fix-login"
+              title="Type anything: it is made into letters, digits, dash, underscore and dot, as a folder and a branch allow"
+              spellCheck={false}
+              maxLength={80}
+              onChange={(e) => typeName(e.target)}
+              onCompositionStart={() => (composingRef.current = true)}
+              onCompositionEnd={(e) => {
+                composingRef.current = false
+                typeName(e.currentTarget)
+              }}
+            />
           </label>
           <div className="actions">
-            <button type="submit" className="primary" disabled={!repoPath || !name.trim() || busy === 'create'}>
-              {busy === 'create' ? 'Creating…' : 'Create'}
+            <button type="submit" className="primary" disabled={!repoPath || !finalName || busy === 'create'}>
+              {busy === 'create' ? (
+                <>
+                  <span className="spinner" aria-hidden="true" />
+                  Creating…
+                </>
+              ) : (
+                'Create'
+              )}
             </button>
           </div>
           <div className="work-setup">
@@ -456,7 +499,7 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
           <p className="work-hint">
             {picked ? (
               <>
-                Makes the folder <span className="mono">{picked.name}/.claude/worktrees/{name.trim() || '<name>'}</span> on a new branch <span className="mono">{name.trim() || '<name>'}</span>
+                Makes the folder <span className="mono">{picked.name}/.claude/worktrees/{finalName || '<name>'}</span> on a new branch <span className="mono">{finalName || '<name>'}</span>
                 {picked.branch ? <> from <span className="mono">{picked.branch}</span></> : ' from the current commit'}, then opens it in the editor.
                 {opts.deps === 'link' && <> The worktree and the repo then share one node_modules, so an install in either changes both. Remove the worktree with Clean up here: a plain <span className="mono">git worktree remove</span> deletes the repo's node_modules through the link.</>}
               </>
@@ -472,7 +515,10 @@ export function WorkView({ active, debug, now, onMessage }: Props) {
           <header>
             {run.agent && <AgentIcon agent={run.agent} />}
             <strong title={run.title}>{run.title}</strong>
-            <span className="work-run-status">{RUN_STATUS[run.status]}</span>
+            <span className="work-run-status">
+              {run.status === 'running' && <span className="spinner" aria-hidden="true" />}
+              {RUN_STATUS[run.status]}
+            </span>
             <span className="spacer" />
             {running ? (
               <div className="actions">

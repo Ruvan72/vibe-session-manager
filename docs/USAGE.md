@@ -154,7 +154,7 @@ The Markdown leaves out what the agent was told behind the scenes, such as remin
 
 The **Work** tab takes a piece of work from start to finish in its own git worktree, so it does not get in the way of what is checked out in the repo.
 
-**Create worktree** asks for a repo and a name. The repos are those with a session in the last 30 days and those you made a worktree in before, with the last one used picked; **Other folder…** adds one. The app then runs `git worktree add`, which makes the folder `<repo>/.claude/worktrees/<name>` on a new branch `<name>`, from the branch that is checked out in the repo's root. It opens the folder in your editor, and the worktree shows in the list. The name can have letters, digits, dash, underscore and dot.
+**Create worktree** asks for a repo and a name. The repos are those with a session in the last 30 days and those you made a worktree in before, with the last one used picked; **Other folder…** adds one. The app then runs `git worktree add`, which makes the folder `<repo>/.claude/worktrees/<name>` on a new branch `<name>`, from the branch that is checked out in the repo's root. It opens the folder in your editor, and the worktree shows in the list. You can type any name: as you type it is made into letters, digits, dash, underscore and dot, so `Årsrapport med tal` becomes `Aarsrapport-med-tal`. While it is being created, the **Create** button shows a turning ring, and so does the output of an install that follows.
 
 A new worktree has only the files git tracks, so the form has two options for what else to bring along. The app remembers what you chose last.
 
