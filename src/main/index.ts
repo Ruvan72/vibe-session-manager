@@ -527,11 +527,14 @@ async function openWorktreeInEditor(dir: string): Promise<void> {
 
 function createWorktree(repoPath: string, name: string, raw: Partial<WorkCreateOptions> | undefined): Promise<WorkResult> {
   return workAction(async () => {
-    const opts: WorkCreateOptions = { copyEnv: !!raw?.copyEnv, deps: raw?.deps === 'link' || raw?.deps === 'install' ? raw.deps : 'none' }
+    const opts: WorkCreateOptions = { copyEnv: !!raw?.copyEnv, deps: raw?.deps === 'link' || raw?.deps === 'install' ? raw.deps : 'none', prisma: !!raw?.prisma }
     const item = await work.create(repoPath, name, opts)
     const notes: string[] = []
-    // The install runs on while the editor opens; its output shows on the tab.
-    if (opts.deps === 'install') await work.install(item.key).catch((e) => notes.push(`Created ${item.name}, but the install did not start: ${e?.message ?? e}`))
+    // The install and prisma generate run on while the editor opens; their output shows on the tab.
+    const install = opts.deps === 'install'
+    if (install || (opts.prisma && opts.deps === 'link')) {
+      await work.prepare(item.key, { install, prisma: opts.prisma }).catch((e) => notes.push(`Created ${item.name}, but ${install ? 'the install' : 'prisma generate'} did not start: ${e?.message ?? e}`))
+    }
     try {
       await openWorktreeInEditor(item.path)
     } catch (e: any) {
