@@ -116,7 +116,7 @@ Claude Code only keeps old transcripts for a while, and its history only shows t
 
 **It is off until you turn it on**, in the tab itself or under Settings → Conversation archive. The first pass copies everything that is on disk, and after that the app copies what is new once a minute. Sessions that were already deleted before you turned it on cannot be recovered.
 
-**Search** finds words in any order, in the titles, names and all the text of the conversations: prompts, replies, pasted text and what subagents wrote. Without a search the tab lists every session, newest first.
+**Search** finds words in any order, in the titles, names and all the text of the conversations: prompts, replies, pasted text and what subagents wrote. Without a search the tab lists every session, newest first. **All repos** next to the counts narrows the results to the repos you tick, by repo name; Cowork sessions without a folder are under **Cowork**.
 
 **Click a result** to read the conversation as Markdown, with the matches highlighted. In a narrow window the reader takes the place of the results, and from about 820 pixels wide they are side by side.
 
@@ -200,7 +200,7 @@ After a commit, the push, pull request, merge and cleanup buttons are also in th
 
 ## Time tracking
 
-The **Time** tab (`Ctrl+T`) shows active time per day: a total, then each repo, then each session with its periods. A pause longer than the idle gap (90 min by default, see Settings) ends a period and is not counted. Sessions that run in parallel both count, so a day's total can be longer than the day. **Copy day as CSV** puts the day on the clipboard, separated by semicolons.
+The **Time** tab (`Ctrl+T`) shows active time per day: a total, then each repo, then each session with its periods. A pause longer than the idle gap (90 min by default, see Settings) ends a period and is not counted. Sessions that run in parallel both count, so a day's total can be longer than the day. **All repos** next to the day narrows it to the repos you tick: the total, the list and **Copy day as CSV** then only count those. The choice stays when you go to another day or tab. **Copy day as CSV** puts the day on the clipboard, separated by semicolons.
 
 Time is stored as one JSON file per day in `~/.vibe-session-manager/time/`. The files keep the time after Claude Code deletes old transcripts. The CSV has an `agent` column (`claude` or `codex`).
 

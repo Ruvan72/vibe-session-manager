@@ -1,7 +1,7 @@
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { drawTrayIcon } from '../../src/main/icon.ts'
-import { clipToDay, dayCsv, displayOrder, formatDuration, groupSessions, relTime, repoOptions, shiftDay, visibleSessions, workDetail, workJournalText } from '../../src/renderer/src/view.ts'
+import { clipToDay, dayCsv, displayOrder, formatDuration, groupSessions, inRepos, relTime, repoNameOptions, repoOptions, shiftDay, visibleSessions, workDetail, workJournalText } from '../../src/renderer/src/view.ts'
 import type { SessionView, WorkItem, WorkJournalEntry } from '../../src/shared/types.ts'
 
 const NOW = Date.parse('2026-10-01T12:00:00')
@@ -60,6 +60,22 @@ describe('repoOptions', () => {
       { key: 'k/web', label: 'web', count: 2 }
     ])
     expect(repoOptions(list, true).map((r) => r.key)).toEqual(['k/api', 'k/old', 'k/web'])
+  })
+})
+
+describe('repoNameOptions', () => {
+  it('counts repos by name and keeps picked repos that are not in the list', () => {
+    expect(repoNameOptions(['web', 'Api', 'web'], ['gone'])).toEqual([
+      { key: 'Api', label: 'Api', count: 1 },
+      { key: 'gone', label: 'gone', count: 0 },
+      { key: 'web', label: 'web', count: 2 }
+    ])
+  })
+
+  it('lets everything through when nothing is picked', () => {
+    expect(inRepos('web', [])).toBe(true)
+    expect(inRepos('web', ['api'])).toBe(false)
+    expect(inRepos('api', ['api'])).toBe(true)
   })
 })
 
