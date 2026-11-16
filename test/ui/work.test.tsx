@@ -37,7 +37,7 @@ const overview = (run: WorkRun | null = null): WorkOverview => ({
   lastRepo: REPO,
   items: ITEMS,
   journal: [],
-  setup: { copyEnv: false, deps: 'none' },
+  setup: { copyEnv: false, deps: 'none', prisma: false },
   run
 })
 
@@ -57,7 +57,7 @@ const api = {
   prWork: vi.fn(ok),
   cleanupWork: vi.fn(ok),
   readWorkLog: vi.fn(() => Promise.resolve({ file: '/log', text: '', truncated: false })),
-  getWorkSetup: vi.fn(() => Promise.resolve({ envFiles: [], nodeModules: [], install: null })),
+  getWorkSetup: vi.fn(() => Promise.resolve({ envFiles: [], nodeModules: [], install: null, prisma: [] })),
   openLink: vi.fn(),
   dismissWorkRun: vi.fn(() => Promise.resolve()),
   stopWork: vi.fn(() => Promise.resolve())
