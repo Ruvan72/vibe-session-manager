@@ -334,6 +334,18 @@ describe('a worktree from start to cleanup', () => {
     expect(existsSync(made.path)).toBe(true)
   })
 
+  it('finds the folder to open without reading the repos again', async () => {
+    const { repo, work, item } = setup()
+    const made = await work.create(repo, 'opened')
+    const known = (await item('opened'))!
+    const scan = vi.spyOn(work as any, 'scanRepo')
+    expect(await work.folderOf(made.key)).toBe(known.path)
+    expect(scan).not.toHaveBeenCalled()
+    rmSync(made.path, { recursive: true, force: true })
+    await expect(work.folderOf(made.key)).rejects.toThrow(/folder of this worktree is gone/)
+    await expect(work.folderOf('no-such-key')).rejects.toThrow(/folder of this worktree is gone/)
+  })
+
   it('cleans up after a folder that was deleted by hand', async () => {
     const { repo, work, item } = setup()
     const made = await work.create(repo, 'vanished')
