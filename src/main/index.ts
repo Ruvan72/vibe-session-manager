@@ -775,13 +775,7 @@ function registerIpc(): void {
   ipcMain.handle('work-create', (_e, repoPath: string, name: string, opts?: Partial<WorkCreateOptions>) => createWorktree(String(repoPath), String(name), opts))
   ipcMain.handle('work-setup', (_e, repoPath: string) => work.setupInfo(String(repoPath)))
   ipcMain.handle('work-pick-repo', () => pickWorkRepo())
-  ipcMain.handle('work-open', (_e, key: string) =>
-    workAction(async () => {
-      const item = (await work.overview()).items.find((i) => i.key === key)
-      if (!item || item.state === 'orphaned') throw new Error('The folder of this worktree is gone.')
-      await openWorktreeInEditor(item.path)
-    })
-  )
+  ipcMain.handle('work-open', (_e, key: string) => workAction(async () => openWorktreeInEditor(await work.folderOf(String(key)))))
   ipcMain.handle('work-commit', (_e, key: string, agent: WorkAgent) => workAction(() => work.commit(String(key), agent)))
   ipcMain.handle('work-push', (_e, key: string) => workAction(() => work.push(String(key))))
   ipcMain.handle('work-merge', (_e, key: string, into?: string) => mergeWorktree(String(key), typeof into === 'string' && into ? into : undefined))

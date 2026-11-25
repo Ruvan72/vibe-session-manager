@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+
+- **Open** on the Work tab went through every repo and worktree again before it started the editor, which took several seconds. It now starts the editor right away.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added

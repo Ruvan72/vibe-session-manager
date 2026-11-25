@@ -902,6 +902,22 @@ export class WorkManager extends EventEmitter<WorkEvents> {
     return { item, scan }
   }
 
+  /**
+   * The folder of an item, to open it. Reading the repos again takes seconds, and opening a folder changes
+   * nothing, so the last scan is trusted as long as the folder is still a checkout.
+   */
+  async folderOf(key: string): Promise<string> {
+    const find = () => [...this.scans.values()].flatMap((s) => [...(s.root ? [s.root] : []), ...s.items]).find((i) => i.key === key)
+    let item = find()
+    if (!item) {
+      await this.scanAll()
+      item = find()
+    }
+    // A linked worktree has a .git file; without it git counts the worktree as gone.
+    if (!item || !existsSync(path.join(item.path, '.git'))) throw new Error('The folder of this worktree is gone.')
+    return item.path
+  }
+
   // ---------- create ----------
 
   /** What the repo has that a new worktree can bring along. Only reads. */
